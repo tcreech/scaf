@@ -1,0 +1,11 @@
+SCAF DEV INSTRUCTIONS:
+
+Repository contains only bare autotools inputs. Run the following to generate standard configure/Makefile stuff:
+
+autoreconf --install
+
+Then run this to build a source tarball to distribute:
+make dist
+
+Of course, you can also do the standard ./configure && make install.
+
