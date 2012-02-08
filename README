@@ -4,6 +4,9 @@ Repository contains only bare autotools inputs. Run the following to generate st
 
 autoreconf --install
 
+NOTE: This implementation of scaf requires zeromq. If it is not in a standard place, you can specify its location to configure:
+./configure ... --with-zeromq=/opt/ ...
+
 Then run this to build a source tarball to distribute:
 make dist
 
