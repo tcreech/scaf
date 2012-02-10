@@ -14,3 +14,4 @@ libscaf_la_SOURCES = libscaf.c
 libscaf_la_CFLAGS = -I@ZMQ_LOCATION@/include
 libscaf_la_LDFLAGS = -version-info 0:0:0
 
+include_HEADERS = scaf.h
