@@ -1,7 +1,6 @@
 //
-//  Hello World server
-//  Binds REP socket to tcp://*:5555
-//  Expects "Hello" from client, replies with "World"
+//  SCAFd server.
+//  Tim Creech <tcreech@umd.edu>, University of Maryland, 2012
 //
 #include <zmq.h>
 #include <stdio.h>
@@ -9,6 +8,8 @@
 #include <unistd.h>
 #include <string.h>
 #include "scaf.h"
+
+#define MAX_THREADS 4
 
 int get_per_client_threads(int max_threads, int num_clients){
    if(num_clients >= max_threads)
@@ -43,7 +44,7 @@ int get_total_clients(int num_clients, int client_request){
 int main (void)
 {
     void *context = zmq_init (1);
-    int max_threads = 8;
+    int max_threads = MAX_THREADS;
     int num_clients = 0;
 
     //  Socket to talk to clients
