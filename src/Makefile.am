@@ -1,6 +1,6 @@
 bin_PROGRAMS = scafd scafc
 scafd_SOURCES = scafd.c scaf.h
-scafd_LDADD = -L@ZMQ_LOCATION@/lib -lzmq
+scafd_LDADD = -L@ZMQ_LOCATION@/lib -lzmq -lgomp
 scafd_CFLAGS = -I@ZMQ_LOCATION@/include
 
 scafc_SOURCES = scafc.c scaf.h libscaf.c
