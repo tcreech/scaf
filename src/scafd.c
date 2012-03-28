@@ -7,9 +7,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <omp.h>
 #include "scaf.h"
-
-#define MAX_THREADS 4
 
 int get_per_client_threads(int max_threads, int num_clients){
    if(num_clients >= max_threads)
@@ -44,7 +43,7 @@ int get_total_clients(int num_clients, int client_request){
 int main (void)
 {
     void *context = zmq_init (1);
-    int max_threads = MAX_THREADS;
+    int max_threads = omp_get_max_threads();
     int num_clients = 0;
 
     //  Socket to talk to clients
