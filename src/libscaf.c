@@ -10,6 +10,7 @@
 #define SCAFD_TIMEOUT_SECONDS 1
 
 int scafd_available;
+int scaf_mypid;
 int omp_max_threads;
 
 int scaf_connect(void *scafd){
@@ -21,8 +22,10 @@ int scaf_connect(void *scafd){
    zmq_connect(scafd, SCAF_CONNECT_STRING);
    // send new client request and get initial num threads
    zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(int));
-   *((int*)zmq_msg_data(&request)) = SCAF_NEW_CLIENT;
+   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+   scaf_message->message = SCAF_NEW_CLIENT;
+   scaf_message->pid = scaf_mypid;
    zmq_send(scafd, &request, 0);
    zmq_msg_close(&request);
 
@@ -45,6 +48,7 @@ int scaf_connect(void *scafd){
 }
 
 void* scaf_init(void **context_p){
+   scaf_mypid = getpid();
    void *context = zmq_init(1);
    *context_p = context;
    void *requester = zmq_socket (context, ZMQ_REQ);
@@ -57,8 +61,10 @@ int scaf_update(void *scafd){
 
    // Get num threads
    zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(int));
-   *((int*)zmq_msg_data(&request)) = SCAF_CURRENT_CLIENT;
+   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+   scaf_message->message = SCAF_CURRENT_CLIENT;
+   scaf_message->pid = scaf_mypid;
    zmq_send(scafd, &request, 0);
    zmq_msg_close(&request);
 
@@ -73,8 +79,10 @@ int scaf_update(void *scafd){
 void scaf_retire(void *scafd, void *context){
    // send retire request
    zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(int));
-   *((int*)zmq_msg_data(&request)) = SCAF_FORMER_CLIENT;
+   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+   scaf_message->message = SCAF_FORMER_CLIENT;
+   scaf_message->pid = scaf_mypid;
    zmq_send(scafd, &request, 0);
    zmq_msg_close(&request);
    zmq_close (scafd);
