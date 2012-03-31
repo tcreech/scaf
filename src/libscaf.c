@@ -26,7 +26,11 @@ int scaf_connect(void *scafd){
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
    scaf_message->message = SCAF_NEW_CLIENT;
    scaf_message->pid = scaf_mypid;
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, &request, 0);
+#else
    zmq_send(scafd, &request, 0);
+#endif
    zmq_msg_close(&request);
 
    // Stop and poll just to see if we timeout. If no reply, then assume there
@@ -35,7 +39,11 @@ int scaf_connect(void *scafd){
    if(rc == 1){
       zmq_msg_t reply;
       zmq_msg_init(&reply);
+#if ZMQ_VERSION_MAJOR > 2
+      zmq_recvmsg(scafd, &reply, 0);
+#else
       zmq_recv(scafd, &reply, 0);
+#endif
       int response = *((int*)(zmq_msg_data(&reply)));
       zmq_msg_close(&reply);
       return response;
@@ -65,12 +73,20 @@ int scaf_update(void *scafd){
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
    scaf_message->message = SCAF_CURRENT_CLIENT;
    scaf_message->pid = scaf_mypid;
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, &request, 0);
+#else
    zmq_send(scafd, &request, 0);
+#endif
    zmq_msg_close(&request);
 
    zmq_msg_t reply;
    zmq_msg_init(&reply);
-   zmq_recv(scafd, &reply, 0);
+#if ZMQ_VERSION_MAJOR > 2
+      zmq_recvmsg(scafd, &reply, 0);
+#else
+      zmq_recv(scafd, &reply, 0);
+#endif
    int response = *((int*)(zmq_msg_data(&reply)));
    zmq_msg_close(&reply);
    return response;
@@ -83,7 +99,11 @@ void scaf_retire(void *scafd, void *context){
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
    scaf_message->message = SCAF_FORMER_CLIENT;
    scaf_message->pid = scaf_mypid;
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, &request, 0);
+#else
    zmq_send(scafd, &request, 0);
+#endif
    zmq_msg_close(&request);
    zmq_close (scafd);
    zmq_term (context);

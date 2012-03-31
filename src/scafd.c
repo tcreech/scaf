@@ -190,7 +190,11 @@ int main(int argc, char **argv){
         //  Wait for next request from client
         zmq_msg_t request;
         zmq_msg_init (&request);
+#if ZMQ_VERSION_MAJOR > 2
+        zmq_recvmsg (responder, &request, 0);
+#else
         zmq_recv (responder, &request, 0);
+#endif
         scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
         int client_pid = client_message->pid;
         int client_request = client_message->message;
@@ -211,7 +215,11 @@ int main(int argc, char **argv){
         zmq_msg_t reply;
         zmq_msg_init_size (&reply, sizeof(int));
         *((int*)(zmq_msg_data(&reply))) = threads;
+#if ZMQ_VERSION_MAJOR > 2
+        zmq_sendmsg (responder, &reply, 0);
+#else
         zmq_send (responder, &reply, 0);
+#endif
         zmq_msg_close (&reply);
     }
 
