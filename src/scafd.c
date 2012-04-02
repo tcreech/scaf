@@ -2,19 +2,26 @@
 //  SCAFd server.
 //  Tim Creech <tcreech@umd.edu>, University of Maryland, 2012
 //
-#include <zmq.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
-#include <omp.h>
+#include <pthread.h>
+#include <zmq.h>
+#include <curses.h>
 #include "scaf.h"
 #include "uthash.h"
-#include <pthread.h>
-#include <curses.h>
+
+#ifndef __clang__
+#include <omp.h>
+#else
+int omp_get_max_threads();
+#endif
 
 #define MAX_CLIENTS 8
+
+#define CURSES_INTERFACE 1
 
 #define RD_LOCK_CLIENTS pthread_rwlock_rdlock(&clients_lock)
 #define RW_LOCK_CLIENTS pthread_rwlock_wrlock(&clients_lock)
@@ -106,11 +113,13 @@ void inline perform_client_request(int client_request, int client_pid){
 }
 
 void referee_body(void* data){
+#if CURSES_INTERFACE
    WINDOW *wnd;
    wnd = initscr();
    noecho();
    clear();
    refresh();
+#endif
    while(1){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
@@ -124,9 +133,11 @@ void referee_body(void* data){
       }
       UNLOCK_CLIENTS;
 
+#if CURSES_INTERFACE
       RD_LOCK_CLIENTS;
       print_clients();
       UNLOCK_CLIENTS;
+#endif
 
       sleep(1);
    }
@@ -163,8 +174,8 @@ void reaper_body(void* data){
 int main(int argc, char **argv){
     pthread_t referee, reaper;
     pthread_rwlock_init(&clients_lock, NULL);
-    pthread_create(&referee, NULL, &referee_body, NULL);
-    pthread_create(&reaper, NULL, &reaper_body, NULL);
+    pthread_create(&referee, NULL, (void *(*)(void*))&referee_body, NULL);
+    pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
 
     int c;
     while( (c = getopt(argc, argv, "q")) != -1){
