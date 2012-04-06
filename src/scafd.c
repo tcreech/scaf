@@ -56,12 +56,12 @@ void inline print_clients(void){
    clear();
    int i;
    int max = HASH_COUNT(clients);
-   printw("scafd: Running, managing %d hardware contexts.\n\n", max_threads);
+   printw("scafd: Running, managing %d hardware contexts. %d clients.\n\n", max_threads, max);
    if(max > 0){
-      printw("scafd: Client list:\n");
+      printw("PID\tTHREADS\n");
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         printw("scafd: \t%d : %d\n", current->pid, current->threads);
+         printw("%d\t%d\n", current->pid, current->threads);
       }
    }
    refresh();
