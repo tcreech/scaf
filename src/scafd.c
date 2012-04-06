@@ -41,10 +41,11 @@ scaf_client inline *find_client(int client_pid){
    return c;
 }
 
-void inline add_client(int client_pid, int threads){
+void inline add_client(int client_pid, int threads, double client_time){
    scaf_client *c = (scaf_client*)malloc(sizeof(scaf_client));
    c->pid = client_pid;
    c->threads = threads;
+   c->time = client_time;
    HASH_ADD_INT(clients, pid, c);
 }
 
@@ -58,10 +59,10 @@ void inline print_clients(void){
    int max = HASH_COUNT(clients);
    printw("scafd: Running, managing %d hardware contexts. %d clients.\n\n", max_threads, max);
    if(max > 0){
-      printw("PID\tTHREADS\n");
+      printw("PID\tTHREADS\tGRANULARITY\n");
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         printw("%d\t%d\n", current->pid, current->threads);
+         printw("%d\t%d\t%f\n", current->pid, current->threads, current->time);
       }
    }
    refresh();
@@ -87,16 +88,29 @@ int inline get_extra_threads(int num_clients){
    return max_threads % num_clients;
 }
 
-void inline perform_client_request(int client_request, int client_pid){
+int inline perform_client_request(scaf_client_message *client_message){
+   int client_pid = client_message->pid;
+   int client_request = client_message->message;
+   double client_time = client_message->time;
+   printf("Client request: %d, %d\n", client_pid, client_request);
+
+   int client_threads;
    if(client_request == SCAF_NEW_CLIENT){
       RW_LOCK_CLIENTS;
       int num_clients = HASH_COUNT(clients);
-      add_client(client_pid, get_per_client_threads(num_clients+1));
+      client_threads = get_per_client_threads(num_clients+1);
+      add_client(client_pid, client_threads, client_time);
       UNLOCK_CLIENTS;
-      return;
+      return client_threads;
    }
-   else if(client_request == SCAF_CURRENT_CLIENT)
-      return;
+   else if(client_request == SCAF_SECTION_START){
+      RD_LOCK_CLIENTS;
+      scaf_client *client = find_client(client_pid);
+      client_threads = client->threads;
+      client->time = client_time;
+      UNLOCK_CLIENTS;
+      return client_threads;
+   }
    else if(client_request == SCAF_FORMER_CLIENT){
       RW_LOCK_CLIENTS;
       scaf_client *old_client = find_client(client_pid);
@@ -104,12 +118,12 @@ void inline perform_client_request(int client_request, int client_pid){
       UNLOCK_CLIENTS;
       free(old_client);
 
-      return;
+      return 0;
    }
 
    // Invalid request?
 
-   return;
+   return 0;
 }
 
 void referee_body(void* data){
@@ -207,20 +221,9 @@ int main(int argc, char **argv){
         zmq_recv (responder, &request, 0);
 #endif
         scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
-        int client_pid = client_message->pid;
-        int client_request = client_message->message;
-        zmq_msg_close (&request);
-
         // Update client bookkeeping if necessary
-        perform_client_request(client_request, client_pid);
-
-        int threads=0;
-        // If the client is not unsubscribing, get an answer for it.
-        if(client_request != SCAF_FORMER_CLIENT){
-           RD_LOCK_CLIENTS;
-           threads = find_client(client_pid)->threads;
-           UNLOCK_CLIENTS;
-        }
+        int threads = perform_client_request(client_message);
+        zmq_msg_close (&request);
 
         //  Send reply back to client (even if the client has retired -- they won't hear this.)
         zmq_msg_t reply;
