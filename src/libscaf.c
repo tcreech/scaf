@@ -3,6 +3,8 @@
 //
 //  Tim Creech <tcreech@umd.edu> - University of Maryland, 2012
 //
+#include <sys/time.h>
+#include <sys/resource.h>
 #include <time.h>
 #include <zmq.h>
 #include <omp.h>
