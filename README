@@ -12,3 +12,9 @@ make dist
 
 Of course, you can also do the standard ./configure && make install.
 
+LIBGOMP INSTRUCTIONS:
+
+Patch GCC sources (patch is for 4.4).
+Rebuild with configure and 'make all-target-libgomp'.
+I haven't figured this out 100% yet, but you might have to grok the Make output and manually rerun the linker to get a libgomp.so which depends on your libscaf.so, which should in turn depend on libzmq.so. If it turns out these layers of dependences aren't supported then I'll have to figure something else out. (Like linking in libscaf and libzmq statically into libgomp?)
+
