@@ -60,10 +60,10 @@ void inline print_clients(void){
    int max = HASH_COUNT(clients);
    printw("scafd: Running, managing %d hardware contexts. %d clients.\n\n", max_threads, max);
    if(max > 0){
-      printw("PID\tTHREADS\tSECTION\n");
+      printw("PID\tTHREADS\tSECTION\tTIME/IPC\n");
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         printw("%d\t%d\t%d\n", current->pid, current->threads, current->current_section);
+         printw("%d\t%d\t%p\t%f/%f\n", current->pid, current->threads, current->current_section, current->last_time, current->last_ipc);
       }
    }
    refresh();
@@ -106,6 +106,8 @@ int inline perform_client_request(scaf_client_message *client_message){
       RW_LOCK_CLIENTS;
       scaf_client *client = find_client(client_pid);
       client->current_section = client_message->section;
+      client->last_time = client_message->time;
+      client->last_ipc  = client_message->ipc;
       client_threads = client->threads;
       UNLOCK_CLIENTS;
       return client_threads;
@@ -158,7 +160,7 @@ void referee_body(void* data){
       UNLOCK_CLIENTS;
 #endif
 
-      sleep(1);
+      usleep(100000);
    }
 }
 

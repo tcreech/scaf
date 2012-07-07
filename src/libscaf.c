@@ -9,6 +9,8 @@
 #include <zmq.h>
 #include <omp.h>
 #include "scaf.h"
+#include <papi.h>
+#include <stdio.h>
 
 #define SCAFD_TIMEOUT_SECONDS 1
 
@@ -20,16 +22,15 @@ int scafd_available;
 int scaf_mypid;
 int omp_max_threads;
 
-double scaf_section_duration;
-double scaf_section_start_time;
+float scaf_section_duration;
+float scaf_section_ipc;
+float scaf_section_start_time;
 
 void* current_section_id;
 int* current_threads;
 scaf_client_section *current_section = NULL;
 scaf_client_section *sections = NULL;
 
-// Internal function lifted from Polybench
-static inline double rtclock(void);
 void* scaf_init(void **context_p);
 int scaf_connect(void *scafd);
 scaf_client_section*  scaf_add_client_section(void *section_id);
@@ -38,6 +39,8 @@ scaf_client_section* scaf_find_client_section(void *section_id);
 scaf_client_section inline *scaf_add_client_section(void *section_id){
    scaf_client_section *new_section = malloc(sizeof(scaf_client_section));
    new_section->section_id = section_id;
+   new_section->last_time = 0;
+   new_section->last_ipc = 1;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
 }
@@ -46,12 +49,6 @@ scaf_client_section inline *scaf_find_client_section(void *section_id){
    scaf_client_section *found = NULL;
    HASH_FIND_PTR(sections, &section_id, found);
    return found;
-}
-
-static inline double rtclock(){
-   struct timeval Tp;
-   gettimeofday(&Tp, NULL);
-   return (Tp.tv_sec + Tp.tv_usec * 1.0e-6);
 }
 
 int scaf_connect(void *scafd){
@@ -94,6 +91,7 @@ int scaf_connect(void *scafd){
       // No response.
       scafd_available = 0;
       omp_max_threads = omp_get_max_threads();
+      printf("WARNING: This SCAF client could not communicate with scafd.\n");
       return omp_max_threads;
    }
 }
@@ -153,6 +151,8 @@ int scaf_section_start(void* section){
    scaf_message->message = SCAF_SECTION_START;
    scaf_message->pid = scaf_mypid;
    scaf_message->section = section;
+   scaf_message->time = current_section->last_time;
+   scaf_message->ipc  = current_section->last_ipc;
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
@@ -169,7 +169,15 @@ int scaf_section_start(void* section){
 #endif
    int response = *((int*)(zmq_msg_data(&reply)));
    zmq_msg_close(&reply);
-   scaf_section_start_time = rtclock();
+
+   {
+      float rtime, ptime, ipc;
+      long long int ins;
+      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      scaf_section_start_time = rtime;
+      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+   }
+
    current_threads = response;
    return response;
 }
@@ -179,9 +187,19 @@ void scaf_section_end(void){
    if(!scafd_available)
       return;
 
-   scaf_section_duration = (rtclock() - scaf_section_start_time );
+   {
+      float rtime, ptime, ipc;
+      long long int ins;
+      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+      scaf_section_ipc = ipc;
+      scaf_section_duration = (rtime - scaf_section_start_time);
+   }
 
-   //printf("Finished section %p. Did %f@%d.\n", current_section_id, scaf_section_duration, current_threads);
+   current_section->last_time = scaf_section_duration;
+   current_section->last_ipc  = scaf_section_ipc;
+
+   //printf("Finished section %p. Did %f@%d, at %f IPC.\n", current_section_id, scaf_section_duration, current_threads, scaf_section_ipc);
 
    zmq_msg_t request;
    zmq_msg_init_size(&request, sizeof(scaf_client_message));
