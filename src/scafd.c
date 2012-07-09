@@ -10,6 +10,8 @@
 #include <pthread.h>
 #include <zmq.h>
 #include <curses.h>
+#include <time.h>
+#include <papi.h>
 #include "scaf.h"
 #include "uthash.h"
 
@@ -32,8 +34,37 @@ static int quiet = 0;
 static scaf_client *clients = NULL;
 
 static int max_threads;
+static float max_ipc;
+static float max_ipc_time;
+static long long int max_ipc_ins;
 
 static pthread_rwlock_t clients_lock;
+
+// Quick test to try to get an idea of what this machine's maximum IPC is.
+// Unclear now much this depends on the machine having an unloaded processor.
+// This is just some nonsensical stuff to try to get any compiler to make any
+// processor do some spinning.
+void test_max_ipc(float* res_ipc, float* res_ipc_time, long long int* res_ins){
+   float rtime, ptime, ipc;
+   long long int ins;
+   unsigned i=0;
+   srand(time(NULL));
+   unsigned upper = ((rand() % 5) + 5) * 10000000;
+   double bogus = 0.0;
+   PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+   for(i=0; i<upper; ++i){
+      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
+      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
+      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
+      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
+   }
+   //printf("%d\n", bogus);
+   PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+   srand((int)bogus);
+   *res_ipc = ipc;
+   *res_ipc_time = rtime;
+   *res_ins = ins;
+}
 
 scaf_client inline *find_client(int client_pid){
    scaf_client* c;
@@ -58,7 +89,7 @@ void inline print_clients(void){
    clear();
    int i;
    int max = HASH_COUNT(clients);
-   printw("scafd: Running, managing %d hardware contexts. %d clients.\n\n", max_threads, max);
+   printw("scafd: Running, managing %d hardware contexts. %d clients. Max IPC is %f, measured for %fs and %lld insts.\n\n", max_threads, max, max_ipc, max_ipc_time, max_ipc_ins);
    if(max > 0){
       printw("PID\tTHREADS\tSECTION\tTIME/IPC\n");
       scaf_client *current, *tmp;
@@ -160,7 +191,7 @@ void referee_body(void* data){
       UNLOCK_CLIENTS;
 #endif
 
-      usleep(100000);
+      usleep(250000);
    }
 }
 
@@ -193,6 +224,8 @@ void reaper_body(void* data){
 }
 
 int main(int argc, char **argv){
+    test_max_ipc(&max_ipc, &max_ipc_time, &max_ipc_ins);
+
     pthread_t referee, reaper;
     pthread_rwlock_init(&clients_lock, NULL);
     pthread_create(&referee, NULL, (void *(*)(void*))&referee_body, NULL);
