@@ -183,7 +183,7 @@ void referee_body(void* data){
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
-         current->threads = roundf(current->last_ipc * proc_ipc);
+         current->threads = (int)roundf(current->last_ipc * proc_ipc);
          i++;
       }
       UNLOCK_CLIENTS;
