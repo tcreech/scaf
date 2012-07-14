@@ -91,10 +91,12 @@ void inline print_clients(void){
    int max = HASH_COUNT(clients);
    printw("scafd: Running, managing %d hardware contexts. %d clients. Max IPC is %f, measured for %fs and %lld insts.\n\n", max_threads, max, max_ipc, max_ipc_time, max_ipc_ins);
    if(max > 0){
-      printw("PID\tTHREADS\tSECTION\tTIME/IPC\n");
+      //printw("PID\tTHREADS\tSECTION\tTIME/IPC\tEFFICIENCY\n");
+      printw("%-06s%-08s%-09s%-10s%-10s%-10s\n", "PID", "THREADS", "SECTION", "TIME", "IPC", "EFFICIENCY");
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         printw("%d\t%d\t%p\t%f/%f\n", current->pid, current->threads, current->current_section, current->last_time, current->last_ipc);
+         printw("%-06d%-08d%-09p%-10f%-10f%-10f\n",current->pid, current->threads, current->current_section, current->last_time, current->last_ipc, current->last_ipc / max_ipc);
+         //printw("%d\t%d\t%p\t%f/%f\t%f\n", current->pid, current->threads, current->current_section, current->last_time, current->last_ipc, current->last_ipc / max_ipc);
       }
    }
    refresh();
@@ -165,13 +167,6 @@ int inline perform_client_request(scaf_client_message *client_message){
 }
 
 void referee_body(void* data){
-#if CURSES_INTERFACE
-   WINDOW *wnd;
-   wnd = initscr();
-   noecho();
-   clear();
-   refresh();
-#endif
    while(1){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
@@ -185,12 +180,24 @@ void referee_body(void* data){
       }
       UNLOCK_CLIENTS;
 
+      usleep(250000);
+   }
+}
+
+void scoreboard_body(void* data){
+#if CURSES_INTERFACE
+   WINDOW *wnd;
+   wnd = initscr();
+   noecho();
+   clear();
+   refresh();
+#endif
+   while(1){
 #if CURSES_INTERFACE
       RD_LOCK_CLIENTS;
       print_clients();
       UNLOCK_CLIENTS;
 #endif
-
       usleep(250000);
    }
 }
@@ -226,8 +233,9 @@ void reaper_body(void* data){
 int main(int argc, char **argv){
     test_max_ipc(&max_ipc, &max_ipc_time, &max_ipc_ins);
 
-    pthread_t referee, reaper;
+    pthread_t referee, reaper, scoreboard;
     pthread_rwlock_init(&clients_lock, NULL);
+    pthread_create(&scoreboard, NULL, (void *(*)(void*))&scoreboard_body, NULL);
     pthread_create(&referee, NULL, (void *(*)(void*))&referee_body, NULL);
     pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
 
