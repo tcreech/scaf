@@ -8,6 +8,7 @@
 #include <string.h>
 #include <signal.h>
 #include <pthread.h>
+#include <math.h>
 #include <zmq.h>
 #include <curses.h>
 #include <time.h>
@@ -170,12 +171,19 @@ void referee_body(void* data){
    while(1){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
-      int num_clients = HASH_COUNT(clients);
-      int per_client  = get_per_client_threads(num_clients);
-      int extra       = get_extra_threads(num_clients);
+
+      float ipc_sum = 0.0;
+
       int i=0;
       HASH_ITER(hh, clients, current, tmp){
-         current->threads = per_client + ( i < extra ? 1 : 0 );
+         ipc_sum += current->last_ipc;
+         i++;
+      }
+      float proc_ipc = ((float)(max_threads)) / ipc_sum;
+
+      i=0;
+      HASH_ITER(hh, clients, current, tmp){
+         current->threads = roundf(current->last_ipc * proc_ipc);
          i++;
       }
       UNLOCK_CLIENTS;
