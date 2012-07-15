@@ -182,9 +182,26 @@ void referee_body(void* data){
       float proc_ipc = ((float)(max_threads)) / ipc_sum;
 
       i=0;
+      int remaining_rations = max_threads;
       HASH_ITER(hh, clients, current, tmp){
-         current->threads = (int)roundf(current->last_ipc * proc_ipc);
+         float exact_ration = current->last_ipc * proc_ipc;
+         int min_ration = floor(exact_ration);
+         current->threads = min_ration==0?1:min_ration;
+         remaining_rations -= current->threads;
          i++;
+      }
+
+      i=0;
+      HASH_ITER(hh, clients, current, tmp){
+        if(remaining_rations==0)
+           break;
+
+         float exact_ration = current->last_ipc * proc_ipc;
+         int rounded_ration = roundf(exact_ration);
+         if(rounded_ration > current->threads){
+            current->threads++;
+            remaining_rations--;
+         }
       }
       UNLOCK_CLIENTS;
 
