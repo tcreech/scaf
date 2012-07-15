@@ -90,7 +90,7 @@ void inline print_clients(void){
    clear();
    int i;
    int max = HASH_COUNT(clients);
-   printw("scafd: Running, managing %d hardware contexts. %d clients. Max IPC is %f, measured for %fs and %lld insts.\n\n", max_threads, max, max_ipc, max_ipc_time, max_ipc_ins);
+   printw("scafd: Running, managing %d hardware contexts. %d clients. Max IPC is %.2f.\n\n", max_threads, max, max_ipc);
    if(max > 0){
       //printw("PID\tTHREADS\tSECTION\tTIME/IPC\tEFFICIENCY\n");
       printw("%-06s%-08s%-09s%-10s%-10s%-10s\n", "PID", "THREADS", "SECTION", "TIME", "IPC", "EFFICIENCY");
