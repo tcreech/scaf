@@ -7,7 +7,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
+#include <dirent.h>
 #include <pthread.h>
+#include <assert.h>
 #include <math.h>
 #include <zmq.h>
 #include <curses.h>
@@ -30,16 +32,132 @@ int omp_get_max_threads();
 #define RW_LOCK_CLIENTS pthread_rwlock_wrlock(&clients_lock)
 #define UNLOCK_CLIENTS pthread_rwlock_unlock(&clients_lock)
 
+#define MAX(a,b) ((a > b) ? a : b)
+#define MIN(a,b) ((a < b) ? a : b)
+
 static int quiet = 0;
 
 static scaf_client *clients = NULL;
 
 static int max_threads;
+static float bg_utilization;
 static float max_ipc;
 static float max_ipc_time;
 static long long int max_ipc_ins;
 
 static pthread_rwlock_t clients_lock;
+
+int get_scaf_controlled_pids(int** pid_list){
+   RD_LOCK_CLIENTS;
+   int size = HASH_COUNT(clients);
+   *pid_list = malloc(sizeof(int)*size);
+
+   scaf_client *current, *tmp;
+   int i=0;
+   HASH_ITER(hh, clients, current, tmp){
+      (*pid_list)[i] = current->pid;
+      i++;
+   }
+   UNLOCK_CLIENTS;
+   return size;
+}
+
+int pid_is_scaf_controlled(int pid, int* pid_list, int list_size){
+   int i;
+   for(i=0; i<list_size; i++){
+      if(pid_list[i] == pid){
+         return 1;
+      }
+   }
+   return 0;
+}
+
+// Go through a /proc/ filesystem and get jiffy usage for all processes not
+// under scafd's control. This takes 1 second to run due to a 1 second sleep.
+// Might possibly work on FreeBSD as is if we use /compat/linux/proc/ instead
+// of /proc/.
+float proc_get_cpus_used(void){
+   unsigned long g_user[2], g_low[2], g_sys[2], g_idle[2], g_iow[2], g_hirq[2], g_sirq[2];
+   const char *format = "%d %s %c %d %d %d %d %d %lu %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %d %d %lu %lu %llu";
+
+   int* pid_list;
+   int list_size = get_scaf_controlled_pids(&pid_list);
+   unsigned long used_stime[2], used_utime[2], scaf_stime[2], scaf_utime[2];
+
+   int z;
+   for(z=0; z<2; z++){
+      FILE *fp;
+      fp = fopen("/proc/stat","r");
+      assert(fp && "Can't open $PROC/stat ?");
+      fscanf(fp,"cpu %lu %lu %lu %lu %lu %lu %lu", &(g_user[z]), &(g_low[z]), &(g_sys[z]), &(g_idle[z]), &(g_iow[z]), &(g_hirq[z]), &(g_sirq[z]));
+      fclose(fp);
+
+      used_utime[z] = 0;
+      used_stime[z] = 0;
+      scaf_utime[z] = 0;
+      scaf_stime[z] = 0;
+
+      DIR* procroot;
+      procroot = opendir("/proc");
+      struct dirent *procdir;
+      while((procdir = readdir(procroot))){
+         int procdir_pid = atoi(procdir->d_name);
+         if(procdir_pid == 0)
+            continue;
+
+         bool is_scaf_pid = 0;
+         if(pid_is_scaf_controlled(procdir_pid, pid_list, list_size)){
+            is_scaf_pid = 1;
+         }
+
+         FILE *stat_f;
+         char buf[256];
+         sprintf(buf, "/proc/%d/stat",procdir_pid);
+         stat_f = fopen(buf, "r");
+         struct proc_stat stat;
+         if(stat_f){
+            struct proc_stat *s = &stat;
+            // Parse the /proc/$PID/stat file for jiffie usage
+            int ret = fscanf(stat_f, format, &s->pid, s->comm, &s->state, &s->ppid, &s->pgrp, &s->session, &s->tty_nr, &s->tpgid, &s->flags, &s->minflt, &s->cminflt, &s->majflt, &s->cmajflt, &s->utime, &s->stime, &s->cutime, &s->cstime, &s->priority, &s->nice, &s->num_threads, &s->itrealvalue, &s->starttime, &s->vsize, &s->rss, &s->rlim, &s->startcode, &s->endcode, &s->startstack, &s->kstkesp, &s->kstkeip, &s->signal, &s->blocked, &s->sigignore, &s->sigcatch, &s->wchan, &s->nswap, &s->cnswap, &s->exit_signal, &s->processor, &s->rt_priority, &s->policy, &s->delayacct_blkio_ticks);
+            fclose(stat_f);
+            if(ret == 42){
+               if(is_scaf_pid){
+                  // If this process is scaf controlled, record its usage so
+                  // that we can account for missing non-idle jiffies
+                  scaf_utime[z] += stat.utime;
+                  //scaf_stime[z] += stat.stime;
+               } else {
+                  // If this is an uncontrolled process, record its usage so
+                  // that we can avoid oversubscription later
+                  used_utime[z] += stat.utime;
+                  //used_stime[z] += stat.stime;
+               }
+            } else {
+               printf("WARNING: failed to parse /proc/%d/stat !\n", procdir_pid);
+            }
+         }
+      }
+      closedir(procroot);
+      if(z!=1)
+         sleep(1);
+   }
+
+   unsigned long total_used = (g_user[1] - g_user[0]) + (g_low[1] - g_low[0]) + (g_sys[1] - g_sys[0]) + (g_iow[1] - g_iow[0]) + (g_hirq[1] - g_hirq[0]) + (g_sirq[1] - g_sirq[0]);
+   unsigned long scaf_used = (scaf_utime[1] - scaf_utime[0]) + (scaf_stime[1] - scaf_stime[0]);
+   // Note that the scaf jiffies are reclaimed as "idle" here.
+   unsigned long total_idle = (g_idle[1] - g_idle[0]) + scaf_used;
+
+   unsigned long used  = (used_utime[1] - used_utime[0]) + (used_stime[1] - used_stime[0]);
+   unsigned long total = used + total_idle;
+
+   double utilization = (((double)used) / ((double)total));
+   utilization = fmin(fmax(utilization,0.0), 1.0);
+   utilization *= (double)max_threads;
+   //printf("total_used: %lu; total_idle: %lu; used: %lu; total: %lu; util: %f\n", total_used, total_idle, used, total, utilization);
+
+   free(pid_list);
+   return utilization;
+}
 
 // Quick test to try to get an idea of what this machine's maximum IPC is.
 // Unclear now much this depends on the machine having an unloaded processor.
@@ -90,7 +208,7 @@ void inline print_clients(void){
    clear();
    int i;
    int max = HASH_COUNT(clients);
-   printw("scafd: Running, managing %d hardware contexts. %d clients. Max IPC is %.2f.\n\n", max_threads, max, max_ipc);
+   printw("scafd: Running, managing %d hardware contexts.\n%d clients. Max IPC is %.2f. Uncontrollable utilization: %f\n\n", max_threads, max, max_ipc, bg_utilization);
    if(max > 0){
       //printw("PID\tTHREADS\tSECTION\tTIME/IPC\tEFFICIENCY\n");
       printw("%-06s%-08s%-09s%-10s%-10s%-10s\n", "PID", "THREADS", "SECTION", "TIME", "IPC", "EFFICIENCY");
@@ -179,10 +297,11 @@ void referee_body(void* data){
          ipc_sum += current->last_ipc;
          i++;
       }
-      float proc_ipc = ((float)(max_threads)) / ipc_sum;
+      int available_threads = max_threads - ceil(bg_utilization - 0.1);
+      int remaining_rations = MAX(available_threads, 1);
+      float proc_ipc = ((float)(remaining_rations)) / ipc_sum;
 
       i=0;
-      int remaining_rations = max_threads;
       HASH_ITER(hh, clients, current, tmp){
          float exact_ration = current->last_ipc * proc_ipc;
          int min_ration = floor(exact_ration);
@@ -255,14 +374,24 @@ void reaper_body(void* data){
    }
 }
 
+void lookout_body(void* data){
+   while(1){
+      // Just keep this global up to date.
+      bg_utilization = proc_get_cpus_used();
+   }
+}
+
 int main(int argc, char **argv){
+    max_threads = omp_get_max_threads();
+    bg_utilization = proc_get_cpus_used();
     test_max_ipc(&max_ipc, &max_ipc_time, &max_ipc_ins);
 
-    pthread_t referee, reaper, scoreboard;
+    pthread_t referee, reaper, scoreboard, lookout;
     pthread_rwlock_init(&clients_lock, NULL);
     pthread_create(&scoreboard, NULL, (void *(*)(void*))&scoreboard_body, NULL);
     pthread_create(&referee, NULL, (void *(*)(void*))&referee_body, NULL);
     pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
+    pthread_create(&lookout, NULL, (void *(*)(void*))&lookout_body, NULL);
 
     int c;
     while( (c = getopt(argc, argv, "q")) != -1){
@@ -277,7 +406,6 @@ int main(int argc, char **argv){
     }
 
     void *context = zmq_init (1);
-    max_threads = omp_get_max_threads();
     int num_clients = 0;
 
     //  Socket to talk to clients
