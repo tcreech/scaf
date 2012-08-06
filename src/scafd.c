@@ -41,6 +41,7 @@ static scaf_client *clients = NULL;
 
 static int max_threads;
 static float bg_utilization;
+static float bg_utilization_prev;
 static float max_ipc;
 static float max_ipc_time;
 static long long int max_ipc_ins;
@@ -138,22 +139,25 @@ float proc_get_cpus_used(void){
          }
       }
       closedir(procroot);
-      if(z!=1)
+      if(z!=1){
          sleep(1);
+         list_size = get_scaf_controlled_pids(&pid_list);
+      }
    }
 
-   unsigned long total_used = (g_user[1] - g_user[0]) + (g_low[1] - g_low[0]) + (g_sys[1] - g_sys[0]) + (g_iow[1] - g_iow[0]) + (g_hirq[1] - g_hirq[0]) + (g_sirq[1] - g_sirq[0]);
-   unsigned long scaf_used = (scaf_utime[1] - scaf_utime[0]) + (scaf_stime[1] - scaf_stime[0]);
+   int long total_used = (g_user[1] - g_user[0]) + (g_low[1] - g_low[0]) + (g_sys[1] - g_sys[0]) + (g_iow[1] - g_iow[0]) + (g_hirq[1] - g_hirq[0]) + (g_sirq[1] - g_sirq[0]);
+   int long scaf_used = (scaf_utime[1] - scaf_utime[0]) + (scaf_stime[1] - scaf_stime[0]);
    // Note that the scaf jiffies are reclaimed as "idle" here.
-   unsigned long total_idle = (g_idle[1] - g_idle[0]) + scaf_used;
+   int long total_idle = (g_idle[1] - g_idle[0]) + (scaf_used>0?scaf_used:0);
 
-   unsigned long used  = (used_utime[1] - used_utime[0]) + (used_stime[1] - used_stime[0]);
-   unsigned long total = used + total_idle;
+   int long non_scaf_used  = (used_utime[1] - used_utime[0]) + (used_stime[1] - used_stime[0]);
+   int long used = total_used - scaf_used;
+   int long total = used + total_idle;
 
    double utilization = (((double)used) / ((double)total));
    utilization = fmin(fmax(utilization,0.0), 1.0);
    utilization *= (double)max_threads;
-   //printf("total_used: %lu; total_idle: %lu; used: %lu; total: %lu; util: %f\n", total_used, total_idle, used, total, utilization);
+   //printf("total_used: %ld; total_idle: %ld; used: %ld; total: %ld; util: %f\n", total_used, total_idle, used, total, utilization);
 
    free(pid_list);
    return utilization;
@@ -377,7 +381,8 @@ void reaper_body(void* data){
 void lookout_body(void* data){
    while(1){
       // Just keep this global up to date.
-      bg_utilization = proc_get_cpus_used();
+      bg_utilization_prev = bg_utilization;
+      bg_utilization = (proc_get_cpus_used() + bg_utilization_prev) * 0.5;
    }
 }
 
