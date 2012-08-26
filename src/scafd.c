@@ -41,7 +41,6 @@ static scaf_client *clients = NULL;
 
 static int max_threads;
 static float bg_utilization;
-static float bg_utilization_prev;
 static float max_ipc;
 static float max_ipc_time;
 static long long int max_ipc_ins;
@@ -381,8 +380,7 @@ void reaper_body(void* data){
 void lookout_body(void* data){
    while(1){
       // Just keep this global up to date.
-      bg_utilization_prev = bg_utilization;
-      bg_utilization = (proc_get_cpus_used() + bg_utilization_prev) * 0.5;
+      bg_utilization = proc_get_cpus_used();
    }
 }
 
