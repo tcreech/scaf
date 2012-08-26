@@ -5,6 +5,10 @@
 #include <unistd.h>
 #include <uthash.h>
 
+#define __NR_scaf_experiment_done 1337
+
+extern int scaf_nullfd;
+
 enum scaf_message_purpose {
    SCAF_NEW_CLIENT,
    SCAF_FORMER_CLIENT,
@@ -41,6 +45,12 @@ void scaf_retire();
 int scaf_section_start(void* section);
 
 void scaf_section_end(void);
+
+void scaf_gomp_experiment_create(void (*fn) (void *), void *data);
+
+void scaf_experiment_start(void);
+
+void scaf_experiment_end(int);
 
 struct proc_stat {
    int pid;         // %d
