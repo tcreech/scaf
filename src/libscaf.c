@@ -262,11 +262,12 @@ void scaf_experiment_start(void){
    if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
 
    printf("SCAF experiment started.\n");
-   alarm(1);
+   ualarm(500000,0);
 }
 
 void scaf_experiment_end(int sig){
    // Ignore all the signals which we might still get.
+   syscall(__NR_scaf_experiment_done);
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
@@ -283,7 +284,6 @@ void scaf_experiment_end(int sig){
    else {
      printf(" (not sure why?)\n");
    }
-   syscall(__NR_scaf_experiment_done);
 
    // Get the results from PAPI.
    float rtime, ptime, ipc;
@@ -298,6 +298,10 @@ void scaf_experiment_end(int sig){
 }
 
 void scaf_gomp_experiment_create(void (*fn) (void *), void *data){
+
+  // Flush all file descriptors before forking. We can't have two copies of
+  // buffered output going to file descriptors due to the fork.
+  fflush(NULL);
 
   int expPid = fork();
   if(expPid==0){
