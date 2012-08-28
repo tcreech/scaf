@@ -248,11 +248,11 @@ void scaf_section_end(void){
    return;
 }
 
-void scaf_experiment_start(void){
-   // Install the end of the experiment as the SIGINT handler.
-   signal(SIGINT, scaf_experiment_end);
-   // Also install the end of the experiment as the SIGALRM handler.
-   signal(SIGALRM, scaf_experiment_end);
+void scaf_training_start(void){
+   // Install the end of the training as the SIGINT handler.
+   signal(SIGINT, scaf_training_end);
+   // Also install the end of the training as the SIGALRM handler.
+   signal(SIGALRM, scaf_training_end);
 
    // Begin gathering information with PAPI.
    float rtime, ptime, ipc;
@@ -261,17 +261,17 @@ void scaf_experiment_start(void){
    scaf_section_start_time = rtime;
    if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
 
-   printf("SCAF experiment started.\n");
+   printf("SCAF training started.\n");
    ualarm(500000,0);
 }
 
-void scaf_experiment_end(int sig){
+void scaf_training_end(int sig){
    // Ignore all the signals which we might still get.
-   syscall(__NR_scaf_experiment_done);
+   syscall(__NR_scaf_training_done);
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
-   printf("SCAF experiment ending.");
+   printf("SCAF training ending.");
    if(sig == SIGALRM){
      printf(" (took too long.)\n");
    }
@@ -293,11 +293,11 @@ void scaf_experiment_end(int sig){
    scaf_section_ipc = ipc;
    scaf_section_duration = (rtime - scaf_section_start_time);
 
-   printf("SCAF experiment finished in %f seconds, ipc of %f.\n", scaf_section_duration, scaf_section_ipc);
+   printf("SCAF training finished in %f seconds, ipc of %f.\n", scaf_section_duration, scaf_section_ipc);
    exit(0);
 }
 
-void scaf_gomp_experiment_create(void (*fn) (void *), void *data){
+void scaf_gomp_training_create(void (*fn) (void *), void *data){
 
   // Flush all file descriptors before forking. We can't have two copies of
   // buffered output going to file descriptors due to the fork.
@@ -306,7 +306,7 @@ void scaf_gomp_experiment_create(void (*fn) (void *), void *data){
   int expPid = fork();
   if(expPid==0){
     // Start up our timing stuff with SCAF.
-    scaf_experiment_start();
+    scaf_training_start();
     // Request that we be traced by the parent. The parent will be in charge of
     // allowing/disallowing system calls, as well as killing us.
     ptrace(PTRACE_TRACEME, 0, NULL, NULL);
@@ -316,9 +316,9 @@ void scaf_gomp_experiment_create(void (*fn) (void *), void *data){
     // incorrectly. An alarm has been set to keep this from taking arbitrarily
     // long.
     fn(data);
-    // When finished, send ourselves SIGINT to end the experiment.
-    printf("SCAF experiment sending self SIGKILL.\n");
-    scaf_experiment_end(0);
+    // When finished, send ourselves SIGINT to end the training.
+    printf("SCAF training sending self SIGKILL.\n");
+    scaf_training_end(0);
     // If we get this far, just quit.
     exit(0);
   }
@@ -359,7 +359,7 @@ void scaf_gomp_experiment_create(void (*fn) (void *), void *data){
     }
 
     if(WSTOPSIG(status)==SIGALRM){
-      // The experiment has run long enough.
+      // The training has run long enough.
       //printf("Parent: child has taken too long. Stopping it.\n");
       ptrace(PTRACE_CONT, expPid, NULL, SIGALRM);
       break;
@@ -368,8 +368,8 @@ void scaf_gomp_experiment_create(void (*fn) (void *), void *data){
     int syscall = ptrace(PTRACE_PEEKUSER, expPid, ORIG_ACCUM, 0);
     //printf("Parent: child has called syscall nr %d\n", syscall);
 
-    if(syscall == __NR_scaf_experiment_done){
-      //printf("Parent: this is a bogus syscall that indicates the experiment ender is in control. We'll stop tracing.\n");
+    if(syscall == __NR_scaf_training_done){
+      //printf("Parent: this is a bogus syscall that indicates the training ender is in control. We'll stop tracing.\n");
       ptrace(PTRACE_DETACH, expPid, NULL, NULL);
       break;
     }
@@ -390,7 +390,7 @@ void scaf_gomp_experiment_create(void (*fn) (void *), void *data){
           syscall != __NR_write && syscall != __NR_restart_syscall) || foundRaW){
       // This is not one of the syscalls deemed ``safe''. (Its completion by
       // the kernel may affect the correctness of the program.) We must stop
-      // the experimental fork now.
+      // the training fork now.
       void *badCall = (void*)0xbadCa11;
       if (ptrace(PTRACE_POKEUSER, expPid, ORIG_ACCUM, badCall) < 0) {
         perror("SCAF ptrace(PTRACE_POKEUSER, ...)");
