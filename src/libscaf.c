@@ -33,6 +33,9 @@
 
 #define SCAFD_TIMEOUT_SECONDS 1
 
+void* scaf_gomp_training_control(void *unused);
+scaf_client_training_description scaf_training_desc;
+
 int did_scaf_startup;
 void *scafd;
 void *scafd_context;
@@ -61,6 +64,8 @@ scaf_client_section inline *scaf_add_client_section(void *section_id){
    new_section->section_id = section_id;
    new_section->last_time = 0;
    new_section->last_ipc = 1;
+   new_section->training_complete = 0;
+   new_section->training_ipc = 0.0;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
 }
@@ -249,11 +254,6 @@ void scaf_section_end(void){
 }
 
 void scaf_training_start(void){
-   // Install the end of the training as the SIGINT handler.
-   signal(SIGINT, scaf_training_end);
-   // Also install the end of the training as the SIGALRM handler.
-   signal(SIGALRM, scaf_training_end);
-
    // Begin gathering information with PAPI.
    float rtime, ptime, ipc;
    long long int ins;
@@ -261,8 +261,13 @@ void scaf_training_start(void){
    scaf_section_start_time = rtime;
    if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
 
-   printf("SCAF training started.\n");
-   ualarm(500000,0);
+   // Install the end of the training as the SIGINT handler.
+   signal(SIGINT, scaf_training_end);
+   // Also install the end of the training as the SIGALRM handler.
+   signal(SIGALRM, scaf_training_end);
+
+   printf(BLUE "SCAF training started." RESET "\n");
+   alarm(10);
 }
 
 void scaf_training_end(int sig){
@@ -271,7 +276,7 @@ void scaf_training_end(int sig){
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
-   printf("SCAF training ending.");
+   printf(BLUE "SCAF training ending.");
    if(sig == SIGALRM){
      printf(" (took too long.)\n");
    }
@@ -284,6 +289,7 @@ void scaf_training_end(int sig){
    else {
      printf(" (not sure why?)\n");
    }
+   printf(RESET);
 
    // Get the results from PAPI.
    float rtime, ptime, ipc;
@@ -293,17 +299,49 @@ void scaf_training_end(int sig){
    scaf_section_ipc = ipc;
    scaf_section_duration = (rtime - scaf_section_start_time);
 
-   printf("SCAF training finished in %f seconds, ipc of %f.\n", scaf_section_duration, scaf_section_ipc);
+   printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
    exit(0);
 }
 
-void scaf_gomp_training_create(void (*fn) (void *), void *data){
+int scaf_gomp_training_create(void (*fn) (void*), void *data){
+   // First of all, only train if necessary.
+   if(current_section->training_complete)
+      return 0;
+
+   scaf_training_desc.fn = fn;
+   scaf_training_desc.data = data;
+   pthread_create(&(scaf_training_desc.control_pthread), NULL, &scaf_gomp_training_control, NULL);
+   return 1;
+}
+
+void scaf_gomp_training_destroy(void){
+   // First of all, only train if necessary.
+   if(current_section->training_complete)
+      return;
+
+   kill(scaf_training_desc.training_pid, SIGALRM);
+   pthread_join(scaf_training_desc.control_pthread, NULL);
+   current_section->training_complete = 1;
+}
+
+void* scaf_gomp_training_control(void *unused){
+   void (*fn) (void*) = scaf_training_desc.fn;
+   void *data = scaf_training_desc.data;
 
   // Flush all file descriptors before forking. We can't have two copies of
   // buffered output going to file descriptors due to the fork.
   fflush(NULL);
 
+  // Set up a set of signals referring to SIGINT and SIGALRM.
+  sigset_t sigs_int_alrm, oldset;
+  sigemptyset(&sigs_int_alrm);
+  sigaddset(&sigs_int_alrm, SIGINT);
+  sigaddset(&sigs_int_alrm, SIGALRM);
+  // Block these signals until we're ready to handle them.
+  pthread_sigmask(SIG_BLOCK, &sigs_int_alrm, &oldset);
+
   int expPid = fork();
+  scaf_training_desc.training_pid = expPid;
   if(expPid==0){
     // Start up our timing stuff with SCAF.
     scaf_training_start();
@@ -311,17 +349,21 @@ void scaf_gomp_training_create(void (*fn) (void *), void *data){
     // allowing/disallowing system calls, as well as killing us.
     ptrace(PTRACE_TRACEME, 0, NULL, NULL);
     kill(getpid(), SIGSTOP);
+    // Unblock signals.
+    sigprocmask(SIG_UNBLOCK, &sigs_int_alrm, NULL);
     // Run the parallel section in serial. The parent will intercept all
     // syscalls and ensure that we don't affect the state of the machine
     // incorrectly. An alarm has been set to keep this from taking arbitrarily
     // long.
     fn(data);
     // When finished, send ourselves SIGINT to end the training.
-    printf("SCAF training sending self SIGKILL.\n");
     scaf_training_end(0);
     // If we get this far, just quit.
     exit(0);
   }
+
+  // Restore signal handling.
+  pthread_sigmask(SIG_SETMASK, &oldset, NULL);
 
   if(expPid < 0){
     perror("SCAF fork");
@@ -397,14 +439,14 @@ void scaf_gomp_training_create(void (*fn) (void *), void *data){
         ptrace(PTRACE_KILL, expPid, NULL, NULL);
         abort();
       }
-      //printf("Parent: child has behaved badly. Stopping it.\n");
+      printf("Parent: child has behaved badly. Stopping it.\n");
       ptrace(PTRACE_CONT, expPid, NULL, SIGINT);
       break;
     }
   }
 
   // We will always have killed the child by now.
-
   waitpid(expPid, &status, 0);
+  return NULL;
 }
 
