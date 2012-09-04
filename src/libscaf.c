@@ -253,7 +253,7 @@ void scaf_section_end(void){
    return;
 }
 
-void scaf_training_start(void){
+inline void scaf_training_start(void){
    // Begin gathering information with PAPI.
    float rtime, ptime, ipc;
    long long int ins;
@@ -270,7 +270,7 @@ void scaf_training_start(void){
    alarm(10);
 }
 
-void scaf_training_end(int sig){
+inline void scaf_training_end(int sig){
    // Ignore all the signals which we might still get.
    syscall(__NR_scaf_training_done);
    signal(SIGALRM, SIG_IGN);
@@ -310,7 +310,10 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
 
    scaf_training_desc.fn = fn;
    scaf_training_desc.data = data;
+   scaf_training_desc.control_pthread_b;
+   pthread_barrier_init(&(scaf_training_desc.control_pthread_b), NULL, 2);
    pthread_create(&(scaf_training_desc.control_pthread), NULL, &scaf_gomp_training_control, NULL);
+   pthread_barrier_wait(&(scaf_training_desc.control_pthread_b));
    return 1;
 }
 
@@ -379,6 +382,12 @@ void* scaf_gomp_training_control(void *unused){
   assert(WIFSTOPPED(status));
   assert(WSTOPSIG(status) == SIGSTOP);
 
+  // Meet the other thread at the barrier. It won't start running the proper
+  // instance of the section until we hit this barrier. At this point in the
+  // training process, the instrumentation has been set up and we are just
+  // about to enter the work function.
+  pthread_barrier_wait(&(scaf_training_desc.control_pthread_b));
+
   int foundRaW = 0;
   int foundW = 0;
   while(1){
@@ -401,8 +410,14 @@ void* scaf_gomp_training_control(void *unused){
     }
 
     if(WSTOPSIG(status)==SIGALRM){
-      // The training has run long enough.
-      //printf("Parent: child has taken too long. Stopping it.\n");
+      // The training has run long enough. We will stop it, but first let the
+      // function run for another small period of time. This is just an easy
+      // way to ensure that our training measurements have a minimum allowed
+      // runtime.
+      ptrace(PTRACE_CONT, expPid, NULL, 0);
+      usleep(100000);
+      kill(expPid, SIGALRM);
+      waitpid(expPid, &status, 0);
       ptrace(PTRACE_CONT, expPid, NULL, SIGALRM);
       break;
     }
