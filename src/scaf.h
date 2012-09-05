@@ -30,7 +30,11 @@ typedef struct {
    float last_time;
    float last_ipc;
    int training_complete;
-   float training_ipc;
+   int training_threads;
+   float training_serial_ipc;
+   float training_parallel_ipc;
+   float training_ipc_speedup;
+   float training_ipc_eff;
    UT_hash_handle hh;
 } scaf_client_section;
 

@@ -66,7 +66,7 @@ scaf_client_section inline *scaf_add_client_section(void *section_id){
    new_section->last_time = 0;
    new_section->last_ipc = 1;
    new_section->training_complete = 0;
-   new_section->training_ipc = 0.0;
+   new_section->training_serial_ipc = 0.0;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
 }
@@ -168,8 +168,10 @@ int scaf_section_start(void* section){
       }
    }
 
-   if(!scafd_available)
+   if(!scafd_available){
+      current_threads = omp_max_threads;
       return omp_max_threads;
+   }
 
    // Get num threads
    zmq_msg_t request;
@@ -277,7 +279,6 @@ inline void scaf_training_end(int sig){
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
-   /*
    printf(BLUE "SCAF training ending.");
    if(sig == SIGALRM){
      printf(" (took too long.)\n");
@@ -292,7 +293,6 @@ inline void scaf_training_end(int sig){
      printf(" (not sure why?)\n");
    }
    printf(RESET);
-   */
 
    // Get the results from PAPI.
    float rtime, ptime, ipc;
@@ -350,7 +350,7 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
 
 void scaf_gomp_training_destroy(void){
    // First of all, only train if necessary.
-   if(current_section->training_complete)
+   if(current_section->training_complete || !(current_threads>1))
       return;
 
    kill(scaf_training_desc.training_pid, SIGALRM);
@@ -381,8 +381,13 @@ void scaf_gomp_training_destroy(void){
    zmq_close(training_child);
 
    pthread_join(scaf_training_desc.control_pthread, NULL);
-   current_section->training_ipc = response;
+   current_section->training_threads = current_threads;
+   current_section->training_serial_ipc = response;
+   current_section->training_parallel_ipc = scaf_section_ipc;
+   current_section->training_ipc_eff = scaf_section_ipc / response;
+   current_section->training_ipc_speedup = ((float)current_threads) * current_section->training_ipc_eff;
    current_section->training_complete = 1;
+   printf(BLUE "Section (%p): {IPC %f; EFF: %f; SPD: %f; THR: %d}" RESET "\n", current_section->section_id, current_section->training_serial_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup, current_section->training_threads);
 }
 
 void* scaf_gomp_training_control(void *unused){
@@ -404,6 +409,8 @@ void* scaf_gomp_training_control(void *unused){
   int expPid = fork();
   scaf_training_desc.training_pid = expPid;
   if(expPid==0){
+    // Put ourselves in the parent's process group.
+    setpgid(0, scaf_mypid);
     // Start up our timing stuff with SCAF.
     scaf_training_start();
     // Request that we be traced by the parent. The parent will be in charge of

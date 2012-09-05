@@ -64,8 +64,9 @@ int get_scaf_controlled_pids(int** pid_list){
 
 int pid_is_scaf_controlled(int pid, int* pid_list, int list_size){
    int i;
+   int pgid = getpgid(pid);
    for(i=0; i<list_size; i++){
-      if(pid_list[i] == pid){
+      if(pid_list[i] == pid || pid_list[i] == pgid){
          return 1;
       }
    }
@@ -300,7 +301,7 @@ void referee_body(void* data){
          ipc_sum += current->last_ipc;
          i++;
       }
-      int available_threads = max_threads - ceil(bg_utilization - 0.1);
+      int available_threads = max_threads - ceil(bg_utilization - 0.5);
       int remaining_rations = MAX(available_threads, 1);
       float proc_ipc = ((float)(remaining_rations)) / ipc_sum;
 
