@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <linux/ptrace.h>
 #include <assert.h>
+#include <pthread.h>
 
 #if defined(__i386__)
 #define ORIG_ACCUM	(4 * ORIG_EAX)
@@ -50,7 +51,7 @@ float scaf_section_ipc;
 float scaf_section_start_time;
 
 void* current_section_id;
-int* current_threads;
+int current_threads;
 scaf_client_section *current_section = NULL;
 scaf_client_section *sections = NULL;
 
@@ -341,7 +342,6 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
 
    scaf_training_desc.fn = fn;
    scaf_training_desc.data = data;
-   scaf_training_desc.control_pthread_b;
    pthread_barrier_init(&(scaf_training_desc.control_pthread_b), NULL, 2);
    pthread_create(&(scaf_training_desc.control_pthread), NULL, &scaf_gomp_training_control, NULL);
    pthread_barrier_wait(&(scaf_training_desc.control_pthread_b));
