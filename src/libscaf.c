@@ -266,7 +266,7 @@ inline void scaf_training_start(void){
    // Also install the end of the training as the SIGALRM handler.
    signal(SIGALRM, scaf_training_end);
 
-   printf(BLUE "SCAF training started." RESET "\n");
+   //printf(BLUE "SCAF training started." RESET "\n");
    alarm(10);
 }
 
@@ -276,6 +276,7 @@ inline void scaf_training_end(int sig){
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
+   /*
    printf(BLUE "SCAF training ending.");
    if(sig == SIGALRM){
      printf(" (took too long.)\n");
@@ -290,6 +291,7 @@ inline void scaf_training_end(int sig){
      printf(" (not sure why?)\n");
    }
    printf(RESET);
+   */
 
    // Get the results from PAPI.
    float rtime, ptime, ipc;
@@ -299,7 +301,36 @@ inline void scaf_training_end(int sig){
    scaf_section_ipc = ipc;
    scaf_section_duration = (rtime - scaf_section_start_time);
 
-   printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
+   //printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
+
+   void *context = zmq_init(1);
+   scafd = zmq_socket (context, ZMQ_REQ);
+   char parent_connect_string[64];
+   sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
+   assert(0==zmq_connect(scafd, parent_connect_string));
+   zmq_msg_t request;
+   zmq_msg_init_size(&request, sizeof(float));
+   float *result_ipc = (float*)(zmq_msg_data(&request));
+   *result_ipc = scaf_section_ipc;
+   
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, &request, 0);
+#else
+   zmq_send(scafd, &request, 0);
+#endif
+   zmq_msg_close(&request);
+
+   zmq_msg_t reply;
+   zmq_msg_init(&reply);
+#if ZMQ_VERSION_MAJOR > 2
+      zmq_recvmsg(scafd, &reply, 0);
+#else
+      zmq_recv(scafd, &reply, 0);
+#endif
+   int response = *((int*)(zmq_msg_data(&reply)));
+   zmq_msg_close(&reply);
+
+   zmq_close(scafd);
    exit(0);
 }
 
@@ -323,7 +354,34 @@ void scaf_gomp_training_destroy(void){
       return;
 
    kill(scaf_training_desc.training_pid, SIGALRM);
+
+   // Get the training results from the child process.
+   void *training_child = zmq_socket(scafd_context, ZMQ_REP);
+   char child_connect_string[64];
+   sprintf(child_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
+   assert(0==zmq_bind(training_child, child_connect_string));
+   zmq_msg_t reply;
+   zmq_msg_init(&reply);
+#if ZMQ_VERSION_MAJOR > 2
+      zmq_recvmsg(training_child, &reply, 0);
+#else
+      zmq_recv(training_child, &reply, 0);
+#endif
+   float response = *((float*)(zmq_msg_data(&reply)));
+   zmq_msg_close(&reply);
+   //  Send reply back to client (even if the client doesn't care about an answer)
+   zmq_msg_init_size (&reply, sizeof(int));
+   *((int*)(zmq_msg_data(&reply))) = 0;
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg (training_child, &reply, 0);
+#else
+   zmq_send (training_child, &reply, 0);
+#endif
+   zmq_msg_close (&reply);
+   zmq_close(training_child);
+
    pthread_join(scaf_training_desc.control_pthread, NULL);
+   current_section->training_ipc = response;
    current_section->training_complete = 1;
 }
 
