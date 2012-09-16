@@ -201,6 +201,7 @@ void inline add_client(int client_pid, int threads, void* client_section){
    c->pid = client_pid;
    c->threads = threads;
    c->current_section = client_section;
+   c->efficiency = max_ipc;
    HASH_ADD_INT(clients, pid, c);
 }
 
@@ -218,8 +219,7 @@ void inline print_clients(void){
       printw("%-06s%-08s%-09s%-10s%-10s%-10s\n", "PID", "THREADS", "SECTION", "TIME", "IPC", "EFFICIENCY");
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         printw("%-06d%-08d%-09p%-10f%-10f%-10f\n",current->pid, current->threads, current->current_section, current->last_time, current->last_ipc, current->last_ipc / max_ipc);
-         //printw("%d\t%d\t%p\t%f/%f\t%f\n", current->pid, current->threads, current->current_section, current->last_time, current->last_ipc, current->last_ipc / max_ipc);
+         printw("%-06d%-08d%-09p%-10f%-10f%-10f\n", current->pid, current->threads, current->current_section, 0.0, 0.0, current->efficiency);
       }
    }
    refresh();
@@ -261,9 +261,9 @@ int inline perform_client_request(scaf_client_message *client_message){
    else if(client_request == SCAF_SECTION_START){
       RW_LOCK_CLIENTS;
       scaf_client *client = find_client(client_pid);
+      assert(client);
       client->current_section = client_message->section;
-      client->last_time = client_message->time;
-      client->last_ipc  = client_message->ipc;
+      client->efficiency  = client_message->efficiency;
       client_threads = client->threads;
       UNLOCK_CLIENTS;
       return client_threads;
@@ -294,20 +294,22 @@ void referee_body(void* data){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
 
-      float ipc_sum = 0.0;
+      float eff_sum = 0.0;
+      int num_clients = HASH_COUNT(clients);
 
       int i=0;
       HASH_ITER(hh, clients, current, tmp){
-         ipc_sum += current->last_ipc;
+         eff_sum += current->efficiency;
          i++;
       }
+
       int available_threads = max_threads - ceil(bg_utilization - 0.5);
       int remaining_rations = MAX(available_threads, 1);
-      float proc_ipc = ((float)(remaining_rations)) / ipc_sum;
+      float proc_ipc = ((float)(remaining_rations)) / eff_sum;
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
-         float exact_ration = current->last_ipc * proc_ipc;
+         float exact_ration = current->efficiency * proc_ipc;
          int min_ration = floor(exact_ration);
          current->threads = min_ration==0?1:min_ration;
          remaining_rations -= current->threads;
@@ -319,7 +321,7 @@ void referee_body(void* data){
         if(remaining_rations==0)
            break;
 
-         float exact_ration = current->last_ipc * proc_ipc;
+         float exact_ration = current->efficiency * proc_ipc;
          int rounded_ration = roundf(exact_ration);
          if(rounded_ration > current->threads){
             current->threads++;
@@ -428,6 +430,8 @@ int main(int argc, char **argv){
         scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
         // Update client bookkeeping if necessary
         int threads = perform_client_request(client_message);
+        assert(threads > 0 || client_message->message == SCAF_FORMER_CLIENT || client_message->message == SCAF_SECTION_END);
+        assert(threads < 4096);
         zmq_msg_close (&request);
 
         //  Send reply back to client (even if the client doesn't care about an answer)

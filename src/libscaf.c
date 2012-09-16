@@ -180,8 +180,10 @@ int scaf_section_start(void* section){
    scaf_message->message = SCAF_SECTION_START;
    scaf_message->pid = scaf_mypid;
    scaf_message->section = section;
-   scaf_message->time = current_section->last_time;
-   scaf_message->ipc  = current_section->last_ipc;
+   if(current_section->training_complete)
+      scaf_message->efficiency = current_section->training_ipc_eff;
+   else
+      scaf_message->efficiency = 1.0;
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
@@ -279,6 +281,7 @@ inline void scaf_training_end(int sig){
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
+   /*
    printf(BLUE "SCAF training ending.");
    if(sig == SIGALRM){
      printf(" (took too long.)\n");
@@ -293,6 +296,7 @@ inline void scaf_training_end(int sig){
      printf(" (not sure why?)\n");
    }
    printf(RESET);
+   */
 
    // Get the results from PAPI.
    float rtime, ptime, ipc;

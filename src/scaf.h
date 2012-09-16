@@ -20,8 +20,7 @@ typedef struct {
    int pid;
    int threads;
    void* current_section;
-   float last_time;
-   float last_ipc;
+   float efficiency;
    UT_hash_handle hh;
 } scaf_client;
 
@@ -42,8 +41,7 @@ typedef struct {
    int pid;
    enum scaf_message_purpose message;
    void* section;
-   float time;
-   float ipc;
+   float efficiency;
 } scaf_client_message;
 
 typedef struct {
