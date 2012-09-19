@@ -7,6 +7,8 @@
 
 #define __NR_scaf_training_done 1337
 
+#define SCAF_MAX_CLIENT_NAME_LEN 9
+
 extern int scaf_nullfd;
 
 enum scaf_message_purpose {
@@ -21,6 +23,7 @@ typedef struct {
    int threads;
    void* current_section;
    float efficiency;
+   char name[SCAF_MAX_CLIENT_NAME_LEN+1];
    UT_hash_handle hh;
 } scaf_client;
 

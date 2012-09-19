@@ -195,6 +195,26 @@ scaf_client inline *find_client(int client_pid){
    return c;
 }
 
+char* gnu_basename(char *path){
+   char *base = strrchr(path, '/');
+   return base ? base+1 : path;
+}
+
+void get_name_from_pid(int pid, char *buf){
+   char procpath[64];
+   char exe[1024];
+   sprintf(procpath, "/proc/%d/exe\0", pid);
+   ssize_t s = readlink(procpath, exe, 1023);
+   if(s >= 0){
+      exe[s] = '\0';
+      char *name = gnu_basename(exe);
+      strncpy(buf, name, SCAF_MAX_CLIENT_NAME_LEN);
+   }else{
+      char name[5] = "[??]\0";
+      strncpy(buf, name, 5);
+   }
+}
+
 void inline add_client(int client_pid, int threads, void* client_section){
    scaf_client *c = (scaf_client*)malloc(sizeof(scaf_client));
    bzero((void*)c, sizeof(scaf_client));
@@ -202,6 +222,7 @@ void inline add_client(int client_pid, int threads, void* client_section){
    c->threads = threads;
    c->current_section = client_section;
    c->efficiency = max_ipc;
+   get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
 
@@ -213,14 +234,30 @@ void inline print_clients(void){
    clear();
    int i;
    int max = HASH_COUNT(clients);
+   start_color();
+   init_pair(1, COLOR_WHITE, COLOR_BLUE);
+   init_pair(2, COLOR_WHITE, COLOR_RED);
+
+   attron(COLOR_PAIR(1));
+   attron(A_BOLD);
    printw("scafd: Running, managing %d hardware contexts.\n%d clients. Max IPC is %.2f. Uncontrollable utilization: %f\n\n", max_threads, max, max_ipc, bg_utilization);
+   attroff(COLOR_PAIR(1));
+
    if(max > 0){
       //printw("PID\tTHREADS\tSECTION\tTIME/IPC\tEFFICIENCY\n");
-      printw("%-06s%-08s%-09s%-10s%-10s%-10s\n", "PID", "THREADS", "SECTION", "TIME", "IPC", "EFFICIENCY");
+      attron(COLOR_PAIR(2));
+      printw("%-06s%-09s%-08s%-09s%-10s%-10s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "TIME", "IPC", "EFFICIENCY");
+      attroff(COLOR_PAIR(2));
+      attroff(A_BOLD);
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         printw("%-06d%-08d%-09p%-10f%-10f%-10f\n", current->pid, current->threads, current->current_section, 0.0, 0.0, current->efficiency);
+         printw("%-06d%-09s%-08d%-09p%-10f%-10f%-10f\n", current->pid, current->name, current->threads, current->current_section, 0.0, 0.0, current->efficiency);
       }
+   }else{
+      attron(COLOR_PAIR(2));
+      printw("(No SCAF processes found.)\n");
+      attroff(COLOR_PAIR(2));
+      attroff(A_BOLD);
    }
    refresh();
 }
