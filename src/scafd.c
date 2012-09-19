@@ -240,8 +240,11 @@ void inline print_clients(void){
 
    attron(COLOR_PAIR(1));
    attron(A_BOLD);
-   printw("scafd: Running, managing %d hardware contexts.\n%d clients. Max IPC is %.2f. Uncontrollable utilization: %f\n\n", max_threads, max, max_ipc, bg_utilization);
+   printw("scafd: Running, managing %d hardware contexts.\n%d clients. Max IPC is %.2f. Uncontrollable utilization: %f\n", max_threads, max, max_ipc, bg_utilization);
    attroff(COLOR_PAIR(1));
+   attroff(A_BOLD);
+   hline(0, 1024); move(3,0);
+   attron(A_BOLD);
 
    if(max > 0){
       //printw("PID\tTHREADS\tSECTION\tTIME/IPC\tEFFICIENCY\n");
