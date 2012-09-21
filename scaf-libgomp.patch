@@ -9,7 +9,7 @@
 
  /* Determine the number of threads to be launched for a PARALLEL construct.
     This algorithm is explicitly described in OpenMP 3.0 section 2.4.1.
-@@ -104,7 +104,16 @@
+@@ -104,7 +104,17 @@
  void
  GOMP_parallel_start (void (*fn) (void *), void *data, unsigned num_threads)
  {
@@ -17,20 +17,22 @@
 +  //num_threads = gomp_resolve_num_threads (num_threads, 0);
 +  num_threads = scaf_section_start((void*)(fn));
 +
-+  // Have SCAF fire off an ``experimental'' fork in order to gather timing
-+  // information. SCAF intercepts all system calls of the new process to
++  // Have SCAF fire off a ``training'' fork in order to gather timing
++  // information. SCAF then intercepts all system calls of the new process to
 +  // prevent it from incorrectly affecting system state. Furthermore, the
 +  // experiment will only be allowed to run for a specified maximum amount of
-+  // time before it is concluded.
-+  scaf_gomp_experiment_create(fn, data);
++  // time before it is concluded, so as not to affect overall program progress
++  // too dramatically.
++  scaf_gomp_training_create(fn, data);
 +
    gomp_team_start (fn, data, num_threads, gomp_new_team (num_threads));
  }
 
-@@ -127,6 +137,7 @@
+@@ -127,6 +137,8 @@
         }
      }
    gomp_team_end ();
 +  scaf_section_end();
++  scaf_gomp_training_destroy();
  }
 
