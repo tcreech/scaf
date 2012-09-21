@@ -2,6 +2,7 @@
 //  SCAFd server.
 //  Tim Creech <tcreech@umd.edu>, University of Maryland, 2012
 //
+#include "../config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -14,7 +15,6 @@
 #include <zmq.h>
 #include <curses.h>
 #include <time.h>
-#include <papi.h>
 #include "scaf.h"
 #include "uthash.h"
 
@@ -41,9 +41,6 @@ static scaf_client *clients = NULL;
 
 static int max_threads;
 static float bg_utilization;
-static float max_ipc;
-static float max_ipc_time;
-static long long int max_ipc_ins;
 
 static pthread_rwlock_t clients_lock;
 
@@ -163,32 +160,6 @@ float proc_get_cpus_used(void){
    return utilization;
 }
 
-// Quick test to try to get an idea of what this machine's maximum IPC is.
-// Unclear now much this depends on the machine having an unloaded processor.
-// This is just some nonsensical stuff to try to get any compiler to make any
-// processor do some spinning.
-void test_max_ipc(float* res_ipc, float* res_ipc_time, long long int* res_ins){
-   float rtime, ptime, ipc;
-   long long int ins;
-   unsigned i=0;
-   srand(time(NULL));
-   unsigned upper = ((rand() % 5) + 5) * 10000000;
-   double bogus = 0.0;
-   PAPI_ipc(&rtime, &ptime, &ins, &ipc);
-   for(i=0; i<upper; ++i){
-      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
-      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
-      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
-      bogus += (((i*i*i*i*i+i+i+i+i)%100)+1);
-   }
-   //printf("%d\n", bogus);
-   PAPI_ipc(&rtime, &ptime, &ins, &ipc);
-   srand((int)bogus);
-   *res_ipc = ipc;
-   *res_ipc_time = rtime;
-   *res_ins = ins;
-}
-
 scaf_client inline *find_client(int client_pid){
    scaf_client* c;
    HASH_FIND_INT(clients, &client_pid, c);
@@ -221,7 +192,7 @@ void inline add_client(int client_pid, int threads, void* client_section){
    c->pid = client_pid;
    c->threads = threads;
    c->current_section = client_section;
-   c->efficiency = max_ipc;
+   c->efficiency = 1.0;
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
@@ -240,7 +211,17 @@ void inline print_clients(void){
 
    attron(COLOR_PAIR(1));
    attron(A_BOLD);
-   printw("scafd: Running, managing %d hardware contexts.\n%d clients. Max IPC is %.2f. Uncontrollable utilization: %f\n", max_threads, max, max_ipc, bg_utilization);
+   printw("scafd: Running, managing %d hardware contexts. ", max_threads);
+#if(HAVE_LIBPAPI)
+   printw("Runtime instrumentation supported.\n");
+#else
+   attroff(COLOR_PAIR(1));
+   attron(COLOR_PAIR(2));
+   printw("WARNING: Runtime instrumentation NOT supported.\n");
+   attroff(COLOR_PAIR(2));
+   attron(COLOR_PAIR(1));
+#endif
+   printw("%d clients. Uncontrollable utilization: %f\n", max, bg_utilization);
    attroff(COLOR_PAIR(1));
    attroff(A_BOLD);
    hline(0, 1024); move(3,0);
@@ -430,7 +411,6 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
     max_threads = omp_get_max_threads();
     bg_utilization = proc_get_cpus_used();
-    test_max_ipc(&max_ipc, &max_ipc_time, &max_ipc_ins);
 
     pthread_t referee, reaper, scoreboard, lookout;
     pthread_rwlock_init(&clients_lock, NULL);

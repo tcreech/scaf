@@ -3,6 +3,7 @@
 //
 //  Tim Creech <tcreech@umd.edu> - University of Maryland, 2012
 //
+#include "../config.h"
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <fcntl.h>
@@ -10,7 +11,9 @@
 #include <zmq.h>
 #include <omp.h>
 #include "scaf.h"
+#if(HAVE_LIBPAPI)
 #include <papi.h>
+#endif
 #include <stdio.h>
 #include <signal.h>
 #include <unistd.h>
@@ -201,6 +204,7 @@ int scaf_section_start(void* section){
    int response = *((int*)(zmq_msg_data(&reply)));
    zmq_msg_close(&reply);
 
+#if(HAVE_LIBPAPI)
    {
       float rtime, ptime, ipc;
       long long int ins;
@@ -208,6 +212,11 @@ int scaf_section_start(void* section){
       scaf_section_start_time = rtime;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
+#else
+   {
+      scaf_section_start_time = 0.0;
+   }
+#endif
 
    current_threads = response;
    return response;
@@ -218,6 +227,7 @@ void scaf_section_end(void){
    if(!scafd_available)
       return;
 
+#if(HAVE_LIBPAPI)
    {
       float rtime, ptime, ipc;
       long long int ins;
@@ -226,6 +236,12 @@ void scaf_section_end(void){
       scaf_section_ipc = ipc;
       scaf_section_duration = (rtime - scaf_section_start_time);
    }
+#else
+   {
+      scaf_section_ipc = 1.0;
+      scaf_section_duration = 1.0;
+   }
+#endif
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
@@ -259,12 +275,21 @@ void scaf_section_end(void){
 }
 
 inline void scaf_training_start(void){
-   // Begin gathering information with PAPI.
-   float rtime, ptime, ipc;
-   long long int ins;
-   int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
-   scaf_section_start_time = rtime;
-   if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+
+#if(HAVE_LIBPAPI)
+   {
+      // Begin gathering information with PAPI.
+      float rtime, ptime, ipc;
+      long long int ins;
+      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      scaf_section_start_time = rtime;
+      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+   }
+#else
+   {
+      scaf_section_start_time = 1.0;
+   }
+#endif
 
    // Install the end of the training as the SIGINT handler.
    signal(SIGINT, scaf_training_end);
@@ -298,13 +323,22 @@ inline void scaf_training_end(int sig){
    printf(RESET);
    */
 
-   // Get the results from PAPI.
-   float rtime, ptime, ipc;
-   long long int ins;
-   int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
-   if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
-   scaf_section_ipc = ipc;
-   scaf_section_duration = (rtime - scaf_section_start_time);
+#if(HAVE_LIBPAPI)
+   {
+      // Get the results from PAPI.
+      float rtime, ptime, ipc;
+      long long int ins;
+      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+      scaf_section_ipc = ipc;
+      scaf_section_duration = (rtime - scaf_section_start_time);
+   }
+#else
+   {
+      scaf_section_ipc = 1.0;
+      scaf_section_duration = 1.0;
+   }
+#endif
 
    //printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
 
@@ -344,6 +378,12 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
    if(current_section->training_complete)
       return 0;
 
+#if(! HAVE_LIBPAPI)
+   {
+      return 0;
+   }
+#endif
+
    scaf_training_desc.fn = fn;
    scaf_training_desc.data = data;
    pthread_barrier_init(&(scaf_training_desc.control_pthread_b), NULL, 2);
@@ -356,6 +396,12 @@ void scaf_gomp_training_destroy(void){
    // First of all, only train if necessary.
    if(current_section->training_complete || !(current_threads>1))
       return;
+
+#if(! HAVE_LIBPAPI)
+   {
+      return;
+   }
+#endif
 
    kill(scaf_training_desc.training_pid, SIGALRM);
 
