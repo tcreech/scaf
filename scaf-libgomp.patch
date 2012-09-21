@@ -1,37 +1,15 @@
 --- gcc-4.4.5.orig/libgomp/parallel.c	2009-04-09 19:23:07.000000000 -0400
 +++ gcc-4.4.5/libgomp/parallel.c	2012-04-23 12:59:07.000000000 -0400
-@@ -26,6 +26,30 @@
- 
+@@ -26,7 +26,7 @@
+
  #include "libgomp.h"
  #include <limits.h>
+-
 +#include <scaf.h>
-+#include <assert.h>
-+#include <fcntl.h>
-+#include <signal.h>
-+#include <stdio.h>
-+#include <stdlib.h>
-+#include <unistd.h>
-+#include <sys/reg.h>
-+#include <sys/types.h>
-+#include <sys/wait.h>
-+#include <sys/ptrace.h>
-+#include <sys/syscall.h>
-+#include <linux/ptrace.h>
-+
-+#if defined(__i386__)
-+#define ORIG_ACCUM	(4 * ORIG_EAX)
-+#define ARGREG	(4 * EBX)
-+#elif defined(__x86_64__)
-+#define ORIG_ACCUM	(8 * ORIG_RAX)
-+#define ARGREG	(8 * RDI)
-+#else
-+#error unsupported architecture
-+#endif
-+
- 
- 
+
  /* Determine the number of threads to be launched for a PARALLEL construct.
-@@ -104,7 +128,16 @@
+    This algorithm is explicitly described in OpenMP 3.0 section 2.4.1.
+@@ -104,7 +104,16 @@
  void
  GOMP_parallel_start (void (*fn) (void *), void *data, unsigned num_threads)
  {
@@ -48,12 +26,11 @@
 +
    gomp_team_start (fn, data, num_threads, gomp_new_team (num_threads));
  }
- 
-@@ -127,6 +160,7 @@
- 	}
+
+@@ -127,6 +137,7 @@
+        }
      }
    gomp_team_end ();
 +  scaf_section_end();
  }
- 
- 
+
