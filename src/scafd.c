@@ -443,10 +443,15 @@ int main(int argc, char **argv){
         zmq_msg_t request;
         zmq_msg_init (&request);
 #if ZMQ_VERSION_MAJOR > 2
-        zmq_recvmsg (responder, &request, 0);
+        int r = zmq_recvmsg (responder, &request, 0);
 #else
-        zmq_recv (responder, &request, 0);
+        int r = zmq_recv (responder, &request, 0);
 #endif
+        //  Ignore failed recvs for now; these are usually just interruptions
+        //  due to SIGWINCH
+        if(r<0)
+           continue;
+
         scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
         // Update client bookkeeping if necessary
         int threads = perform_client_request(client_message);
