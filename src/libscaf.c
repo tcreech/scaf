@@ -37,6 +37,13 @@
 
 #define SCAFD_TIMEOUT_SECONDS 1
 
+// Training-related options
+// Set this to 1 if parallel execution should wait for training to finish;
+// otherwise it will be forced to terminate early.
+#define SCAF_PARALLEL_WAIT_FOR_TRAINING 0
+// The maximum amount of time that a training fork will run for.
+#define SCAF_TRAINING_TIME_LIMIT_SECONDS 10
+
 void* scaf_gomp_training_control(void *unused);
 scaf_client_training_description scaf_training_desc;
 
@@ -297,7 +304,7 @@ inline void scaf_training_start(void){
    signal(SIGALRM, scaf_training_end);
 
    //printf(BLUE "SCAF training started." RESET "\n");
-   alarm(10);
+   alarm(SCAF_TRAINING_TIME_LIMIT_SECONDS);
 }
 
 inline void scaf_training_end(int sig){
@@ -306,7 +313,6 @@ inline void scaf_training_end(int sig){
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
-   /*
    printf(BLUE "SCAF training ending.");
    if(sig == SIGALRM){
      printf(" (took too long.)\n");
@@ -321,7 +327,6 @@ inline void scaf_training_end(int sig){
      printf(" (not sure why?)\n");
    }
    printf(RESET);
-   */
 
 #if(HAVE_LIBPAPI)
    {
@@ -340,7 +345,7 @@ inline void scaf_training_end(int sig){
    }
 #endif
 
-   //printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
+   printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
 
    void *context = zmq_init(1);
    scafd = zmq_socket (context, ZMQ_REQ);
@@ -403,7 +408,11 @@ void scaf_gomp_training_destroy(void){
    }
 #endif
 
-   kill(scaf_training_desc.training_pid, SIGALRM);
+#if(! SCAF_PARALLEL_WAIT_FOR_TRAINING)
+   {
+      kill(scaf_training_desc.training_pid, SIGALRM);
+   }
+#endif
 
    // Get the training results from the child process.
    void *training_child = zmq_socket(scafd_context, ZMQ_REP);
@@ -437,7 +446,7 @@ void scaf_gomp_training_destroy(void){
    current_section->training_ipc_eff = scaf_section_ipc / response;
    current_section->training_ipc_speedup = ((float)current_threads) * current_section->training_ipc_eff;
    current_section->training_complete = 1;
-   printf(BLUE "Section (%p): {IPC %f; EFF: %f; SPD: %f; THR: %d}" RESET "\n", current_section->section_id, current_section->training_serial_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup, current_section->training_threads);
+   printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, scaf_section_duration, current_section->training_threads, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
 }
 
 void* scaf_gomp_training_control(void *unused){
