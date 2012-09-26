@@ -59,6 +59,10 @@ int scaf_nullfd;
 float scaf_section_duration;
 float scaf_section_ipc;
 float scaf_section_start_time;
+float scaf_section_end_time;
+
+float scaf_parallel_runtime;
+float scaf_serial_runtime;
 
 void* current_section_id;
 int current_threads;
@@ -217,6 +221,7 @@ int scaf_section_start(void* section){
       long long int ins;
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
+      scaf_serial_runtime += scaf_section_start_time - scaf_section_end_time;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
 #else
@@ -241,7 +246,10 @@ void scaf_section_end(void){
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
       scaf_section_ipc = ipc;
-      scaf_section_duration = (rtime - scaf_section_start_time);
+      scaf_section_end_time = rtime;
+      scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
+      scaf_parallel_runtime += scaf_section_duration;
+      //printf("Process ptime: %f, stime: %f --> %f%% parallel\n", scaf_parallel_runtime, scaf_serial_runtime, scaf_parallel_runtime / (scaf_parallel_runtime + scaf_serial_runtime) * 100.0);
    }
 #else
    {
@@ -290,6 +298,7 @@ inline void scaf_training_start(void){
       long long int ins;
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
+      scaf_serial_runtime += scaf_section_start_time - scaf_section_end_time;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
 #else
@@ -336,7 +345,9 @@ inline void scaf_training_end(int sig){
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
       scaf_section_ipc = ipc;
-      scaf_section_duration = (rtime - scaf_section_start_time);
+      scaf_section_end_time = rtime;
+      scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
+      scaf_parallel_runtime += scaf_section_duration;
    }
 #else
    {
@@ -446,7 +457,7 @@ void scaf_gomp_training_destroy(void){
    current_section->training_ipc_eff = scaf_section_ipc / response;
    current_section->training_ipc_speedup = ((float)current_threads) * current_section->training_ipc_eff;
    current_section->training_complete = 1;
-   printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, scaf_section_duration, current_section->training_threads, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
+   printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
 }
 
 void* scaf_gomp_training_control(void *unused){
