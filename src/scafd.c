@@ -192,7 +192,7 @@ void inline add_client(int client_pid, int threads, void* client_section){
    c->pid = client_pid;
    c->threads = threads;
    c->current_section = client_section;
-   c->efficiency = 1.0;
+   c->metric = 1.0;
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
@@ -235,7 +235,7 @@ void inline print_clients(void){
       attroff(A_BOLD);
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         printw("%-06d%-09s%-08d%-09p%-10f%-10f%-10f\n", current->pid, current->name, current->threads, current->current_section, 0.0, 0.0, current->efficiency);
+         printw("%-06d%-09s%-08d%-09p%-10f%-10f%-10f\n", current->pid, current->name, current->threads, current->current_section, 0.0, 0.0, current->metric);
       }
    }else{
       attron(COLOR_PAIR(2));
@@ -284,7 +284,8 @@ int inline perform_client_request(scaf_client_message *client_message){
       scaf_client *client = find_client(client_pid);
       assert(client);
       client->current_section = client_message->section;
-      client->efficiency  = client_message->efficiency;
+      client->metric = client_message->total_efficiency;
+      //client->metric = client_message->efficiency;
       client_threads = client->threads;
       UNLOCK_CLIENTS;
       return client_threads;
@@ -315,22 +316,22 @@ void referee_body(void* data){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
 
-      float eff_sum = 0.0;
+      float metric_sum = 0.0;
       int num_clients = HASH_COUNT(clients);
 
       int i=0;
       HASH_ITER(hh, clients, current, tmp){
-         eff_sum += current->efficiency;
+         metric_sum += current->metric;
          i++;
       }
 
       int available_threads = max_threads - ceil(bg_utilization - 0.5);
       int remaining_rations = MAX(available_threads, 1);
-      float proc_ipc = ((float)(remaining_rations)) / eff_sum;
+      float proc_ipc = ((float)(remaining_rations)) / metric_sum;
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
-         float exact_ration = current->efficiency * proc_ipc;
+         float exact_ration = current->metric * proc_ipc;
          int min_ration = floor(exact_ration);
          current->threads = min_ration==0?1:min_ration;
          remaining_rations -= current->threads;
@@ -342,7 +343,7 @@ void referee_body(void* data){
         if(remaining_rations==0)
            break;
 
-         float exact_ration = current->efficiency * proc_ipc;
+         float exact_ration = current->metric * proc_ipc;
          int rounded_ration = roundf(exact_ration);
          if(rounded_ration > current->threads){
             current->threads++;

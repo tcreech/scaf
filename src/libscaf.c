@@ -44,6 +44,9 @@
 // The maximum amount of time that a training fork will run for.
 #define SCAF_TRAINING_TIME_LIMIT_SECONDS 10
 
+// Disable training
+#define SCAF_ENABLE_TRAINING 1
+
 void* scaf_gomp_training_control(void *unused);
 scaf_client_training_description scaf_training_desc;
 
@@ -62,7 +65,10 @@ float scaf_section_start_time;
 float scaf_section_end_time;
 
 float scaf_parallel_runtime;
+float scaf_parallel_work;
 float scaf_serial_runtime;
+float scaf_total_runtime;
+float scaf_total_work;
 
 void* current_section_id;
 int current_threads;
@@ -198,6 +204,12 @@ int scaf_section_start(void* section){
       scaf_message->efficiency = current_section->training_ipc_eff;
    else
       scaf_message->efficiency = 1.0;
+
+   if(scaf_serial_runtime + scaf_parallel_runtime < 0.10)
+      scaf_message->total_efficiency = 2.0;
+   else
+      scaf_message->total_efficiency = (scaf_total_work / scaf_total_runtime) * 0.0625;
+
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
@@ -221,7 +233,9 @@ int scaf_section_start(void* section){
       long long int ins;
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
-      scaf_serial_runtime += scaf_section_start_time - scaf_section_end_time;
+      scaf_serial_runtime += (scaf_section_start_time - scaf_section_end_time);
+      scaf_total_runtime = rtime;
+      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
 #else
@@ -249,7 +263,11 @@ void scaf_section_end(void){
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
       scaf_parallel_runtime += scaf_section_duration;
-      //printf("Process ptime: %f, stime: %f --> %f%% parallel\n", scaf_parallel_runtime, scaf_serial_runtime, scaf_parallel_runtime / (scaf_parallel_runtime + scaf_serial_runtime) * 100.0);
+      scaf_parallel_work += (current_section->training_complete ? scaf_section_duration * ( scaf_section_ipc*current_threads / current_section->training_serial_ipc ) : scaf_section_duration * current_threads * 0.5);
+      scaf_total_runtime = rtime;
+      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
+      printf("Section %p: {ipc %f, time %f, sipc %f, est speedup %f}\n", current_section->section_id, scaf_section_ipc * current_threads, scaf_section_duration, current_section->training_serial_ipc, (current_section->training_complete ? scaf_section_ipc * current_threads / current_section->training_serial_ipc : current_threads ));
+      printf(" --> serial_time %f, parallel_time %f, parallel_work %f, total_work %f --> runtime_efficiency %f\n", scaf_serial_runtime, scaf_parallel_runtime, scaf_parallel_work, scaf_total_work, (scaf_total_work / scaf_total_runtime) * (scaf_parallel_runtime / scaf_parallel_work));
    }
 #else
    {
@@ -299,6 +317,8 @@ inline void scaf_training_start(void){
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
       scaf_serial_runtime += scaf_section_start_time - scaf_section_end_time;
+      scaf_total_runtime = rtime;
+      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
 #else
@@ -348,6 +368,9 @@ inline void scaf_training_end(int sig){
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
       scaf_parallel_runtime += scaf_section_duration;
+      scaf_parallel_work += scaf_section_duration * current_threads;
+      scaf_total_runtime = rtime;
+      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
    }
 #else
    {
@@ -394,7 +417,7 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
    if(current_section->training_complete)
       return 0;
 
-#if(! HAVE_LIBPAPI)
+#if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
    {
       return 0;
    }
@@ -413,7 +436,7 @@ void scaf_gomp_training_destroy(void){
    if(current_section->training_complete || !(current_threads>1))
       return;
 
-#if(! HAVE_LIBPAPI)
+#if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
    {
       return;
    }
