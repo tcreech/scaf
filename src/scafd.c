@@ -270,6 +270,10 @@ int inline perform_client_request(scaf_client_message *client_message){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
+   float client_metric = client_message->efficiency;
+   if(client_metric == 0.0)
+      client_metric += 0.1;
+
    int client_threads;
    if(client_request == SCAF_NEW_CLIENT){
       RW_LOCK_CLIENTS;
@@ -284,8 +288,7 @@ int inline perform_client_request(scaf_client_message *client_message){
       scaf_client *client = find_client(client_pid);
       assert(client);
       client->current_section = client_message->section;
-      client->metric = client_message->total_efficiency;
-      //client->metric = client_message->efficiency;
+      client->metric = client_metric;
       client_threads = client->threads;
       UNLOCK_CLIENTS;
       return client_threads;
@@ -293,6 +296,7 @@ int inline perform_client_request(scaf_client_message *client_message){
    else if(client_request == SCAF_SECTION_END){
       RW_LOCK_CLIENTS;
       scaf_client *client = find_client(client_pid);
+      //client->metric = client_metric;
       UNLOCK_CLIENTS;
       return 0;
    }

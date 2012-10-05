@@ -63,12 +63,10 @@ float scaf_section_duration;
 float scaf_section_ipc;
 float scaf_section_start_time;
 float scaf_section_end_time;
+float scaf_serial_duration;
+float scaf_section_efficiency;
 
-float scaf_parallel_runtime;
-float scaf_parallel_work;
-float scaf_serial_runtime;
-float scaf_total_runtime;
-float scaf_total_work;
+float scaf_program_efficiency;
 
 void* current_section_id;
 int current_threads;
@@ -200,15 +198,18 @@ int scaf_section_start(void* section){
    scaf_message->message = SCAF_SECTION_START;
    scaf_message->pid = scaf_mypid;
    scaf_message->section = section;
-   if(current_section->training_complete)
-      scaf_message->efficiency = current_section->training_ipc_eff;
-   else
-      scaf_message->efficiency = 1.0;
 
-   if(scaf_serial_runtime + scaf_parallel_runtime < 0.10)
-      scaf_message->total_efficiency = 2.0;
-   else
-      scaf_message->total_efficiency = (scaf_total_work / scaf_total_runtime) * 0.0625;
+   if(current_threads < 1)
+      current_threads=1;
+   if(scaf_section_duration <= 0.000001){
+      scaf_section_duration = 0.01;
+      scaf_section_efficiency = 0.5;
+   }
+
+   float scaf_serial_efficiency = 1.0 / current_threads;
+   scaf_message->efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / (scaf_section_duration + scaf_serial_duration);
+
+   //printf("@@@ %f, %f\n", scaf_message->efficiency, scaf_serial_duration+scaf_section_duration);
 
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
@@ -233,9 +234,7 @@ int scaf_section_start(void* section){
       long long int ins;
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
-      scaf_serial_runtime += (scaf_section_start_time - scaf_section_end_time);
-      scaf_total_runtime = rtime;
-      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
+      scaf_serial_duration = rtime - scaf_section_end_time;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
 #else
@@ -262,12 +261,7 @@ void scaf_section_end(void){
       scaf_section_ipc = ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-      scaf_parallel_runtime += scaf_section_duration;
-      scaf_parallel_work += (current_section->training_complete ? scaf_section_duration * ( scaf_section_ipc*current_threads / current_section->training_serial_ipc ) : scaf_section_duration * current_threads * 0.5);
-      scaf_total_runtime = rtime;
-      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
-      printf("Section %p: {ipc %f, time %f, sipc %f, est speedup %f}\n", current_section->section_id, scaf_section_ipc * current_threads, scaf_section_duration, current_section->training_serial_ipc, (current_section->training_complete ? scaf_section_ipc * current_threads / current_section->training_serial_ipc : current_threads ));
-      printf(" --> serial_time %f, parallel_time %f, parallel_work %f, total_work %f --> runtime_efficiency %f\n", scaf_serial_runtime, scaf_parallel_runtime, scaf_parallel_work, scaf_total_work, (scaf_total_work / scaf_total_runtime) * (scaf_parallel_runtime / scaf_parallel_work));
+      //printf("Section %p: {ipc %05.2f, time %07.5f, itime %07.5f, sipc %05.2f, est speedup %05.2f}\n", current_section->section_id, scaf_section_ipc * current_threads, scaf_section_duration, scaf_serial_duration, current_section->training_serial_ipc, (current_section->training_complete ? scaf_section_ipc * current_threads / current_section->training_serial_ipc : current_threads ));
    }
 #else
    {
@@ -287,6 +281,11 @@ void scaf_section_end(void){
    scaf_message->message = SCAF_SECTION_END;
    scaf_message->pid = scaf_mypid;
    scaf_message->section = current_section_id;
+   if(current_section->training_complete)
+      scaf_section_efficiency = (scaf_section_ipc * current_threads / current_section->training_serial_ipc) / current_threads;
+   else
+      scaf_section_efficiency = 0.5;
+   //printf("%%%%%% Measured IPC %f, Serial IPC %f, threads %d -> eff %f for %f s\n", scaf_section_ipc, current_section->training_serial_ipc, current_threads, scaf_section_efficiency, scaf_section_duration);
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
@@ -316,9 +315,6 @@ inline void scaf_training_start(void){
       long long int ins;
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
-      scaf_serial_runtime += scaf_section_start_time - scaf_section_end_time;
-      scaf_total_runtime = rtime;
-      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
 #else
@@ -367,10 +363,6 @@ inline void scaf_training_end(int sig){
       scaf_section_ipc = ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-      scaf_parallel_runtime += scaf_section_duration;
-      scaf_parallel_work += scaf_section_duration * current_threads;
-      scaf_total_runtime = rtime;
-      scaf_total_work = scaf_serial_runtime + scaf_parallel_work;
    }
 #else
    {
