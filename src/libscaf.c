@@ -146,6 +146,9 @@ void* scaf_init(void **context_p){
    void *context = zmq_init(1);
    *context_p = context;
    void *requester = zmq_socket (context, ZMQ_REQ);
+#if HAVE_LIBPAPI
+   PAPI_thread_init(pthread_self);
+#endif
    return requester;
 }
 
@@ -244,6 +247,7 @@ int scaf_section_start(void* section){
 #endif
 
    current_threads = response;
+   scaf_section_ipc = 0.0;
    return response;
 }
 
@@ -258,14 +262,14 @@ void scaf_section_end(void){
       long long int ins;
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
-      scaf_section_ipc = ipc;
+      scaf_section_ipc += ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
       //printf("Section %p: {ipc %05.2f, time %07.5f, itime %07.5f, sipc %05.2f, est speedup %05.2f}\n", current_section->section_id, scaf_section_ipc * current_threads, scaf_section_duration, scaf_serial_duration, current_section->training_serial_ipc, (current_section->training_complete ? scaf_section_ipc * current_threads / current_section->training_serial_ipc : current_threads ));
    }
 #else
    {
-      scaf_section_ipc = 1.0;
+      scaf_section_ipc += 1.0;
       scaf_section_duration = 1.0;
    }
 #endif
@@ -613,5 +617,35 @@ void* scaf_gomp_training_control(void *unused){
   // We will always have killed the child by now.
   waitpid(expPid, &status, 0);
   return NULL;
+}
+
+void scaf_gomp_replacement_fn(void *data){
+   float thread_section_ipc;
+   printf("SCAF gomp wrapper starting.\n");
+
+#if HAVE_LIBPAPI
+   {
+      float rtime, ptime, ipc;
+      long long int ins;
+      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening in slave thread. (%d)\n", ret);
+   }
+#endif
+
+   void (*fn) (void*) = current_section->section_id;
+   fn(data);
+
+#if HAVE_LIBPAPI
+   {
+      float rtime, ptime, ipc;
+      long long int ins;
+      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      thread_section_ipc = ipc;
+      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening in slave thread. (%d)\n", ret);
+   }
+#endif
+
+
+   printf("SCAF gomp wrapper done. IPC=%f\n", thread_section_ipc);
 }
 

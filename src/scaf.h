@@ -11,6 +11,8 @@
 
 extern int scaf_nullfd;
 
+void scaf_gomp_replacement_fn(void *data);
+
 enum scaf_message_purpose {
    SCAF_NEW_CLIENT,
    SCAF_FORMER_CLIENT,
