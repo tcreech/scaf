@@ -266,7 +266,7 @@ void scaf_section_end(void){
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
       scaf_section_ipc += ipc;
-      printf("pipc: %f, sipc: %f, spu: %f\n", scaf_section_ipc, current_section->training_serial_ipc, scaf_section_ipc / current_section->training_serial_ipc);
+      //printf("pipc: %f, sipc: %f, spu: %f\n", scaf_section_ipc, current_section->training_serial_ipc, scaf_section_ipc / current_section->training_serial_ipc);
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
    }
@@ -289,10 +289,10 @@ void scaf_section_end(void){
    scaf_message->pid = scaf_mypid;
    scaf_message->section = current_section_id;
    if(current_section->training_complete)
-      scaf_section_efficiency = (scaf_section_ipc / current_section->training_serial_ipc) / current_threads;
+      scaf_section_efficiency = scaf_section_ipc / current_section->training_serial_ipc;
    else
       scaf_section_efficiency = 0.5;
-   //printf("%%%%%% Measured IPC %f, Serial IPC %f, threads %d -> eff %f for %f s\n", scaf_section_ipc, current_section->training_serial_ipc, current_threads, scaf_section_efficiency, scaf_section_duration);
+   printf("%%%%%% Measured IPC %f, Serial IPC %f, threads %d -> eff %f for %f s\n", scaf_section_ipc, current_section->training_serial_ipc, current_threads, scaf_section_efficiency, scaf_section_duration);
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
@@ -623,30 +623,9 @@ void* scaf_gomp_training_control(void *unused){
 }
 
 void scaf_gomp_replacement_fn(void *data){
-   float thread_section_ipc;
-   pthread_t me = pthread_self();
-
-   if(me!=scaf_master_thread && HAVE_LIBPAPI)
-   {
-      float rtime, ptime, ipc;
-      long long int ins;
-      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
-      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening in slave thread. (%d)\n", ret);
-   }
 
    void (*fn) (void*) = current_section->section_id;
    fn(data);
 
-   if(me!=scaf_master_thread && HAVE_LIBPAPI)
-   {
-      float rtime, ptime, ipc;
-      long long int ins;
-      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
-      thread_section_ipc = ipc;
-      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening in slave thread. (%d)\n", ret);
-      pthread_mutex_lock(&scaf_section_ipc_lock);
-      scaf_section_ipc += ipc;
-      pthread_mutex_unlock(&scaf_section_ipc_lock);
-   }
 }
 
