@@ -73,6 +73,16 @@ int current_threads;
 scaf_client_section *current_section = NULL;
 scaf_client_section *sections = NULL;
 
+// Discrete IIR, single-pole lowpass filter.
+// Time constant rc is expected to be the same across calls. Inputs x and dt
+// are the data and time interval, respectively.
+inline float lowpass(float x, float dt, float rc){
+   static float yp = 0.5;
+   float alpha = dt / (rc + dt);
+   yp = alpha * x + (1.0-alpha) * yp;
+   return yp;
+}
+
 void* scaf_init(void **context_p);
 int scaf_connect(void *scafd);
 scaf_client_section*  scaf_add_client_section(void *section_id);
@@ -212,10 +222,10 @@ int scaf_section_start(void* section){
    }
 
    float scaf_serial_efficiency = 1.0 / current_threads;
-   scaf_message->efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / (scaf_section_duration + scaf_serial_duration);
+   float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / (scaf_section_duration + scaf_serial_duration);
+   float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
 
-   //printf("*** %f, %f,  %f, %f\n", scaf_section_efficiency, scaf_section_duration, scaf_serial_efficiency, scaf_serial_duration);
-   //printf("@@@ %f, %f\n", scaf_message->efficiency, scaf_serial_duration+scaf_section_duration);
+   scaf_message->efficiency = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, 2.0);
 
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
@@ -266,7 +276,6 @@ void scaf_section_end(void){
       int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
       scaf_section_ipc += ipc;
-      //printf("pipc: %f, sipc: %f, spu: %f\n", scaf_section_ipc, current_section->training_serial_ipc, scaf_section_ipc / current_section->training_serial_ipc);
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
    }
@@ -280,8 +289,6 @@ void scaf_section_end(void){
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
 
-   //printf("Finished section %p. Did %f@%d, at %f IPC.\n", current_section_id, scaf_section_duration, current_threads, scaf_section_ipc);
-
    zmq_msg_t request;
    zmq_msg_init_size(&request, sizeof(scaf_client_message));
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
@@ -292,7 +299,6 @@ void scaf_section_end(void){
       scaf_section_efficiency = scaf_section_ipc / current_section->training_serial_ipc;
    else
       scaf_section_efficiency = 0.5;
-   printf("%%%%%% Measured IPC %f, Serial IPC %f, threads %d -> eff %f for %f s\n", scaf_section_ipc, current_section->training_serial_ipc, current_threads, scaf_section_efficiency, scaf_section_duration);
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
