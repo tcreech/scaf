@@ -21,7 +21,7 @@ int main (void)
    for (request_nbr = 0; request_nbr != REQUESTS; request_nbr++) {
       int j;
 
-      int threads = scaf_section_start(1337);
+      int threads = scaf_section_start((void*)1337);
       printf("Running on %d threads.\n", threads);
 
       // BEGIN PARALLEL LOOP //

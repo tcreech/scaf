@@ -5,6 +5,16 @@
 #include <unistd.h>
 #include <uthash.h>
 
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a > _b ? _a : _b; })
+
+#define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a < _b ? _a : _b; })
+
 #define __NR_scaf_training_done 1337
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9

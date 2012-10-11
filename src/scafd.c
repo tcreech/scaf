@@ -87,7 +87,7 @@ float proc_get_cpus_used(void){
       FILE *fp;
       fp = fopen("/proc/stat","r");
       assert(fp && "Can't open $PROC/stat ?");
-      fscanf(fp,"cpu %lu %lu %lu %lu %lu %lu %lu", &(g_user[z]), &(g_low[z]), &(g_sys[z]), &(g_idle[z]), &(g_iow[z]), &(g_hirq[z]), &(g_sirq[z]));
+      assert(7==fscanf(fp,"cpu %lu %lu %lu %lu %lu %lu %lu", &(g_user[z]), &(g_low[z]), &(g_sys[z]), &(g_idle[z]), &(g_iow[z]), &(g_hirq[z]), &(g_sirq[z])));
       fclose(fp);
 
       used_utime[z] = 0;
@@ -174,7 +174,7 @@ char* gnu_basename(char *path){
 void get_name_from_pid(int pid, char *buf){
    char procpath[64];
    char exe[1024];
-   sprintf(procpath, "/proc/%d/exe\0", pid);
+   sprintf(procpath, "/proc/%d/exe", pid);
    ssize_t s = readlink(procpath, exe, 1023);
    if(s >= 0){
       exe[s] = '\0';

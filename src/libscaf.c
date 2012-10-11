@@ -94,7 +94,7 @@ scaf_client_section inline *scaf_add_client_section(void *section_id){
    new_section->last_time = 0;
    new_section->last_ipc = 1;
    new_section->training_complete = 0;
-   new_section->training_serial_ipc = 0.0;
+   new_section->training_serial_ipc = 0.5;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
 }
@@ -295,10 +295,7 @@ void scaf_section_end(void){
    scaf_message->message = SCAF_SECTION_END;
    scaf_message->pid = scaf_mypid;
    scaf_message->section = current_section_id;
-   if(current_section->training_complete)
-      scaf_section_efficiency = scaf_section_ipc / current_section->training_serial_ipc;
-   else
-      scaf_section_efficiency = 0.5;
+   scaf_section_efficiency = min(1.0, scaf_section_ipc / current_section->training_serial_ipc);
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
