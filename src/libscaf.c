@@ -348,20 +348,20 @@ inline void scaf_training_end(int sig){
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
-   printf(BLUE "SCAF training ending.");
+   //printf(BLUE "SCAF training ending.");
    if(sig == SIGALRM){
-     printf(" (took too long.)\n");
+     //printf(" (took too long.)\n");
    }
    else if(sig == 0){
-     printf(" (finished.)\n");
+     //printf(" (finished.)\n");
    }
    else if(sig == SIGINT){
-     printf(" (killed.)\n");
+     //printf(" (killed.)\n");
    }
    else {
-     printf(" (not sure why?)\n");
+     //printf(" (not sure why?)\n");
    }
-   printf(RESET);
+   //printf(RESET);
 
 #if(HAVE_LIBPAPI)
    {
@@ -381,7 +381,7 @@ inline void scaf_training_end(int sig){
    }
 #endif
 
-   printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
+   //printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
 
    void *context = zmq_init(1);
    scafd = zmq_socket (context, ZMQ_REQ);
@@ -482,7 +482,7 @@ void scaf_gomp_training_destroy(void){
    current_section->training_ipc_eff = scaf_section_ipc / response / current_threads;
    current_section->training_ipc_speedup = ((float)current_threads) * current_section->training_ipc_eff;
    current_section->training_complete = 1;
-   printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
+   //printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
 }
 
 void* scaf_gomp_training_control(void *unused){
