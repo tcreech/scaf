@@ -4,6 +4,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <uthash.h>
+#include <sys/time.h>
+#include <time.h>
 
 #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
@@ -21,8 +23,7 @@
 
 static inline double rtclock(){
    struct timeval Tp;
-   int stat;
-   stat = gettimeofday (&Tp, NULL);
+   gettimeofday (&Tp, NULL);
    return (Tp.tv_sec + Tp.tv_usec * 1.0e-6);
 }
 
