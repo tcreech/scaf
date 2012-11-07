@@ -36,6 +36,9 @@ int omp_get_max_threads();
 #define MIN(a,b) ((a < b) ? a : b)
 
 static int quiet = 0;
+static int nobgload = 0;
+static int equipartitioning = 0;
+static char *logfilename = NULL;
 
 static scaf_client *clients = NULL;
 
@@ -78,6 +81,12 @@ int pid_is_scaf_controlled(int pid, int* pid_list, int list_size){
 // Might possibly work on FreeBSD as is if we use /compat/linux/proc/ instead
 // of /proc/.
 float proc_get_cpus_used(void){
+   // Return immediately if the user disabled load monitoring
+   if(nobgload){
+      sleep(1);
+      return 0.0;
+   }
+
    unsigned long g_user[2], g_low[2], g_sys[2], g_idle[2], g_iow[2], g_hirq[2], g_sirq[2];
    const char *format = "%d %s %c %d %d %d %d %d %lu %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %d %d %lu %lu %llu";
 
@@ -273,8 +282,8 @@ int inline perform_client_request(scaf_client_message *client_message){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
-   //float client_metric = 0.5;
-   float client_metric = client_message->efficiency;
+   float client_metric = equipartitioning ? 0.5 : client_message->efficiency;
+
    if(client_metric == 0.0)
       client_metric += 0.1;
 
@@ -357,8 +366,10 @@ void referee_body(void* data){
                remaining_rations--;
             }
          }
-         fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, current->metric, current->threads);
-         //fflush(lf);
+         if(logfilename){
+            fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, current->metric, current->threads);
+            //fflush(lf);
+         }
       }
       UNLOCK_CLIENTS;
 
@@ -420,9 +431,34 @@ void lookout_body(void* data){
 }
 
 int main(int argc, char **argv){
+
+    int c;
+    while( (c = getopt(argc, argv, "heqbl:")) != -1){
+       switch(c){
+          case 'q':
+             quiet = 1;
+             break;
+          case 'e':
+             equipartitioning = 1;
+             break;
+          case 'b':
+             nobgload = 1;
+             break;
+          case 'l':
+             logfilename = optarg;;
+             break;
+          case 'h':
+          default:
+             printf("Usage: %s [-h] [-q] [-e] [-b] [-l logfile]\n\t-h\tdisplay this message\n\t-q\tbe quieter or something\n\t-b\tdon't monitor background load\n\t-l logfile\tlog allocations and efficiencies to logfile\n\t-e\tonly do strict equipartitioning\n", argv[0]);
+             exit(1);
+             break;
+       }
+    }
+
     max_threads = omp_get_max_threads();
     bg_utilization = proc_get_cpus_used();
-    lf = fopen("/tmp/scafd.log", "w");
+    if(logfilename)
+       lf = fopen(logfilename, "w");
     startuptime = rtclock();
 
     pthread_t referee, reaper, scoreboard, lookout;
@@ -431,18 +467,6 @@ int main(int argc, char **argv){
     pthread_create(&referee, NULL, (void *(*)(void*))&referee_body, NULL);
     pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
     pthread_create(&lookout, NULL, (void *(*)(void*))&lookout_body, NULL);
-
-    int c;
-    while( (c = getopt(argc, argv, "q")) != -1){
-       switch(c){
-          case 'q':
-             quiet = 1;
-             break;
-          default:
-             // Unkonwn option ignored.
-             break;
-       }
-    }
 
     void *context = zmq_init (1);
     int num_clients = 0;
