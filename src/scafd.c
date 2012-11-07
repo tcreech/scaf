@@ -44,6 +44,9 @@ static float bg_utilization;
 
 static pthread_rwlock_t clients_lock;
 
+static FILE *lf;
+static double startuptime;
+
 int get_scaf_controlled_pids(int** pid_list){
    RD_LOCK_CLIENTS;
    int size = HASH_COUNT(clients);
@@ -270,6 +273,7 @@ int inline perform_client_request(scaf_client_message *client_message){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
+   //float client_metric = 0.5;
    float client_metric = client_message->efficiency;
    if(client_metric == 0.0)
       client_metric += 0.1;
@@ -344,15 +348,17 @@ void referee_body(void* data){
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
-        if(remaining_rations==0)
-           break;
+         if(remaining_rations!=0){
 
-         float exact_ration = current->metric * proc_ipc;
-         int rounded_ration = roundf(exact_ration);
-         if(rounded_ration > current->threads){
-            current->threads++;
-            remaining_rations--;
+            float exact_ration = current->metric * proc_ipc;
+            int rounded_ration = roundf(exact_ration);
+            if(rounded_ration > current->threads){
+               current->threads++;
+               remaining_rations--;
+            }
          }
+         fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, current->metric, current->threads);
+         //fflush(lf);
       }
       UNLOCK_CLIENTS;
 
@@ -416,6 +422,8 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
     max_threads = omp_get_max_threads();
     bg_utilization = proc_get_cpus_used();
+    lf = fopen("/tmp/scafd.log", "w");
+    startuptime = rtclock();
 
     pthread_t referee, reaper, scoreboard, lookout;
     pthread_rwlock_init(&clients_lock, NULL);

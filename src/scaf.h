@@ -19,6 +19,13 @@
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9
 
+static inline double rtclock(){
+   struct timeval Tp;
+   int stat;
+   stat = gettimeofday (&Tp, NULL);
+   return (Tp.tv_sec + Tp.tv_usec * 1.0e-6);
+}
+
 extern int scaf_nullfd;
 
 void scaf_gomp_replacement_fn(void *data);
