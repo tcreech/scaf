@@ -228,8 +228,8 @@ int scaf_section_start(void* section){
    }
 
    float scaf_serial_efficiency = 1.0 / current_threads;
-   float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / (scaf_section_duration + scaf_serial_duration);
    float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
+   float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / scaf_latest_efficiency_duration;
    float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, 2.0);
 
    // Communicate the latest results with the SCAF daemon and get an allocation update, but only if this wouldn't exceed our desired communication rate.
@@ -265,11 +265,10 @@ int scaf_section_start(void* section){
 
 #if(HAVE_LIBPAPI)
    {
-      float rtime, ptime, ipc;
+      float ptime, ipc;
       long long int ins;
-      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
-      scaf_section_start_time = rtime;
-      scaf_serial_duration = rtime - scaf_section_end_time;
+      int ret = PAPI_ipc(&scaf_section_start_time, &ptime, &ins, &ipc);
+      scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
 #else
@@ -643,12 +642,5 @@ void* scaf_gomp_training_control(void *unused){
   // We will always have killed the child by now.
   waitpid(expPid, &status, 0);
   return NULL;
-}
-
-void scaf_gomp_replacement_fn(void *data){
-
-   void (*fn) (void*) = current_section->section_id;
-   fn(data);
-
 }
 
