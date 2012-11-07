@@ -58,6 +58,7 @@ int scafd_available;
 int scaf_mypid;
 int omp_max_threads;
 int scaf_nullfd;
+int scaf_feedback_freq = 1;
 
 float scaf_section_duration;
 float scaf_section_ipc;
@@ -153,6 +154,12 @@ int scaf_connect(void *scafd){
 void* scaf_init(void **context_p){
    scaf_mypid = getpid();
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
+   char *fbf = getenv("SCAF_FEEDBACK_FREQ");
+   if(fbf)
+      scaf_feedback_freq = atoi(fbf);
+   else
+      scaf_feedback_freq = 1;
+
    void *context = zmq_init(1);
    *context_p = context;
    void *requester = zmq_socket (context, ZMQ_REQ);
@@ -184,6 +191,8 @@ void scaf_retire(void){
 
 int scaf_section_start(void* section){
    //printf("Starting section %p.\n", section);
+   static int rate_limit_counter = 0;
+   int skip_this_communication = 0;
 
    current_section_id = section;
    if(current_section == NULL || current_section->section_id != section){
@@ -206,13 +215,10 @@ int scaf_section_start(void* section){
       return omp_max_threads;
    }
 
-   // Get num threads
-   zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(scaf_client_message));
-   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
-   scaf_message->message = SCAF_SECTION_START;
-   scaf_message->pid = scaf_mypid;
-   scaf_message->section = section;
+   if(((rate_limit_counter++) % scaf_feedback_freq) != 0){
+      //current_threads = current_threads;
+      skip_this_communication = 1;
+   }
 
    if(current_threads < 1)
       current_threads=1;
@@ -224,25 +230,38 @@ int scaf_section_start(void* section){
    float scaf_serial_efficiency = 1.0 / current_threads;
    float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / (scaf_section_duration + scaf_serial_duration);
    float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
+   float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, 2.0);
 
-   scaf_message->efficiency = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, 2.0);
+   // Communicate the latest results with the SCAF daemon and get an allocation update, but only if this wouldn't exceed our desired communication rate.
+   if(!skip_this_communication){
+      // Get num threads
+      zmq_msg_t request;
+      zmq_msg_init_size(&request, sizeof(scaf_client_message));
+      scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+      scaf_message->message = SCAF_SECTION_START;
+      scaf_message->pid = scaf_mypid;
+      scaf_message->section = section;
+
+      scaf_message->efficiency = scaf_latest_efficiency_smooth;
 
 #if ZMQ_VERSION_MAJOR > 2
-   zmq_sendmsg(scafd, &request, 0);
+      zmq_sendmsg(scafd, &request, 0);
 #else
-   zmq_send(scafd, &request, 0);
+      zmq_send(scafd, &request, 0);
 #endif
-   zmq_msg_close(&request);
+      zmq_msg_close(&request);
 
-   zmq_msg_t reply;
-   zmq_msg_init(&reply);
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
 #if ZMQ_VERSION_MAJOR > 2
       zmq_recvmsg(scafd, &reply, 0);
 #else
       zmq_recv(scafd, &reply, 0);
 #endif
-   int response = *((int*)(zmq_msg_data(&reply)));
-   zmq_msg_close(&reply);
+      int response = *((int*)(zmq_msg_data(&reply)));
+      zmq_msg_close(&reply);
+      current_threads = response;
+   }
 
 #if(HAVE_LIBPAPI)
    {
@@ -259,9 +278,8 @@ int scaf_section_start(void* section){
    }
 #endif
 
-   current_threads = response;
    scaf_section_ipc = 0.0;
-   return response;
+   return current_threads;
 }
 
 void scaf_section_end(void){
@@ -288,14 +306,15 @@ void scaf_section_end(void){
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
+   scaf_section_efficiency = min(1.0, scaf_section_ipc / current_section->training_serial_ipc);
 
+#if 0 // We don't do anything at all with "SECTION_END" messages.
    zmq_msg_t request;
    zmq_msg_init_size(&request, sizeof(scaf_client_message));
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
    scaf_message->message = SCAF_SECTION_END;
    scaf_message->pid = scaf_mypid;
    scaf_message->section = current_section_id;
-   scaf_section_efficiency = min(1.0, scaf_section_ipc / current_section->training_serial_ipc);
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
@@ -312,6 +331,7 @@ void scaf_section_end(void){
 #endif
    int response = *((int*)(zmq_msg_data(&reply)));
    zmq_msg_close(&reply);
+#endif
 
    return;
 }
