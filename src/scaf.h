@@ -41,6 +41,7 @@ typedef struct {
    int threads;
    void* current_section;
    float metric;
+   float log_factor;
    char name[SCAF_MAX_CLIENT_NAME_LEN+1];
    UT_hash_handle hh;
 } scaf_client;

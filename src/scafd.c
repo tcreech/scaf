@@ -338,7 +338,8 @@ void referee_body(void* data){
 
       int i=0;
       HASH_ITER(hh, clients, current, tmp){
-         metric_sum += current->metric;
+         current->log_factor = MAX((current->metric * current->threads - 1.0),1.0)/log(current->threads);
+         metric_sum += current->log_factor;
          i++;
       }
 
@@ -348,7 +349,7 @@ void referee_body(void* data){
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
-         float exact_ration = current->metric * proc_ipc;
+         float exact_ration = current->log_factor * proc_ipc;
          int min_ration = floor(exact_ration);
          current->threads = min_ration==0?1:min_ration;
          remaining_rations -= current->threads;
@@ -359,7 +360,7 @@ void referee_body(void* data){
       HASH_ITER(hh, clients, current, tmp){
          if(remaining_rations!=0){
 
-            float exact_ration = current->metric * proc_ipc;
+            float exact_ration = current->log_factor * proc_ipc;
             int rounded_ration = roundf(exact_ration);
             if(rounded_ration > current->threads){
                current->threads++;
