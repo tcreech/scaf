@@ -437,7 +437,7 @@ inline void scaf_training_end(int sig){
 
 int scaf_gomp_training_create(void (*fn) (void*), void *data){
    // First of all, only train if necessary.
-   if(current_section->training_complete)
+   if(current_section->training_complete || !(current_threads>1))
       return 0;
 
 #if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
