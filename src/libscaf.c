@@ -47,6 +47,8 @@
 // Disable training
 #define SCAF_ENABLE_TRAINING 1
 
+#define SCAF_LOWPASS_TIME_CONSTANT (2.0)
+
 void* scaf_gomp_training_control(void *unused);
 scaf_client_training_description scaf_training_desc;
 
@@ -230,7 +232,7 @@ int scaf_section_start(void* section){
    float scaf_serial_efficiency = 1.0 / current_threads;
    float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
    float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / scaf_latest_efficiency_duration;
-   float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, 2.0);
+   float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, SCAF_LOWPASS_TIME_CONSTANT);
 
    // Communicate the latest results with the SCAF daemon and get an allocation update, but only if this wouldn't exceed our desired communication rate.
    if(!skip_this_communication){
@@ -633,7 +635,7 @@ void* scaf_gomp_training_control(void *unused){
         ptrace(PTRACE_KILL, expPid, NULL, NULL);
         abort();
       }
-      printf("Parent: child has behaved badly. Stopping it.\n");
+      printf("Parent: child has behaved badly (section %p). Stopping it.\n", fn);
       ptrace(PTRACE_CONT, expPid, NULL, SIGINT);
       break;
     }

@@ -28,6 +28,8 @@ int omp_get_max_threads();
 
 #define CURSES_INTERFACE 1
 
+#define REFEREE_PERIOD_US (250000)
+
 #define RD_LOCK_CLIENTS pthread_rwlock_rdlock(&clients_lock)
 #define RW_LOCK_CLIENTS pthread_rwlock_wrlock(&clients_lock)
 #define UNLOCK_CLIENTS pthread_rwlock_unlock(&clients_lock)
@@ -328,7 +330,7 @@ int inline perform_client_request(scaf_client_message *client_message){
    return 0;
 }
 
-void referee_body(void* data){
+void maxspeedup_referee_body(void* data){
    while(1){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
@@ -374,7 +376,36 @@ void referee_body(void* data){
       }
       UNLOCK_CLIENTS;
 
-      usleep(250000);
+      usleep(REFEREE_PERIOD_US);
+   }
+}
+
+void equi_referee_body(void* data){
+   while(1){
+      RW_LOCK_CLIENTS;
+      scaf_client *current, *tmp;
+
+      int num_clients = HASH_COUNT(clients);
+
+      int i=0;
+
+      int available_threads = max_threads - ceil(bg_utilization - 0.5);
+      int remaining_rations = MAX(available_threads, 1);
+
+      int per_client = remaining_rations / num_clients;
+      int extra = remaining_rations % num_clients;
+
+      i=0;
+      HASH_ITER(hh, clients, current, tmp){
+         current->threads = per_client + (i<extra?1:0);
+         if(logfilename){
+            fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, 0.5, current->threads);
+            //fflush(lf);
+         }
+      }
+      UNLOCK_CLIENTS;
+
+      usleep(REFEREE_PERIOD_US);
    }
 }
 
@@ -462,10 +493,11 @@ int main(int argc, char **argv){
        lf = fopen(logfilename, "w");
     startuptime = rtclock();
 
+    void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
     pthread_t referee, reaper, scoreboard, lookout;
     pthread_rwlock_init(&clients_lock, NULL);
     pthread_create(&scoreboard, NULL, (void *(*)(void*))&scoreboard_body, NULL);
-    pthread_create(&referee, NULL, (void *(*)(void*))&referee_body, NULL);
+    pthread_create(&referee, NULL, (void *(*)(void*))referee_body, NULL);
     pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
     pthread_create(&lookout, NULL, (void *(*)(void*))&lookout_body, NULL);
 
