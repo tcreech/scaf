@@ -40,6 +40,7 @@ int omp_get_max_threads();
 static int quiet = 0;
 static int nobgload = 0;
 static int equipartitioning = 0;
+static int cheating = 0;
 static char *logfilename = NULL;
 
 static scaf_client *clients = NULL;
@@ -303,7 +304,8 @@ int inline perform_client_request(scaf_client_message *client_message){
       scaf_client *client = find_client(client_pid);
       assert(client);
       client->current_section = client_message->section;
-      client->metric = client_metric;
+      if(!cheating)
+         client->metric = client_metric;
       client_threads = client->threads;
       UNLOCK_CLIENTS;
       return client_threads;
@@ -409,6 +411,122 @@ void equi_referee_body(void* data){
    }
 }
 
+// Discrete IIR, single-pole lowpass filter. Used in scafd only by the referee
+// using a priori profiling.  Time constant rc is expected to be the same
+// across calls. Inputs x and dt are the data and time interval, respectively.
+inline float lowpass(float x, float dt, float rc){
+   static float yp = 0.5;
+   float alpha = dt / (rc + dt);
+   yp = alpha * x + (1.0-alpha) * yp;
+   return yp;
+}
+
+// This is a special mode for the PLDI 2012 experiment. Assume that two
+// programs are running, and that the one named "bt.B.x" is the "bad" one
+// resulting from AESOP parallelization. Populate the efficency information
+// here, based on our testing on bhindi.ece.umd.edu. (The efficiency does not
+// vary much at all through program phases in these cases.)
+void cheating_referee_body(void* data){
+   while(1){
+      RW_LOCK_CLIENTS;
+      scaf_client *current, *tmp;
+
+      float metric_sum = 0.0;
+      int num_clients = HASH_COUNT(clients);
+
+      int i=0;
+      HASH_ITER(hh, clients, current, tmp){
+         if(strcmp(current->name, "bt.B.x")==0){
+            // we know that this silly program only speeds up to 1.12966 on 2+ threads.
+            current->metric = 1.12966 / current->threads;
+            if(current->threads==1)
+               current->metric = 1;
+         }else if(strcmp(current->name, "lu.C.x")==0){
+            // Did some testing ahead of time to gather these efficiency
+            // ratings. Note that the speedup is actually better than linear
+            // for some time, which is good but has no special meaning for
+            // SCAF.
+            switch(current->threads){
+               case 1:
+                  current->metric = 1; break;
+               case 2:
+                  current->metric = 1.20; break;
+               case 3:
+                  current->metric = 1.25; break;
+               case 4:
+                  current->metric = 1.24; break;
+               case 5:
+                  current->metric = 1.16; break;
+               case 6:
+                  current->metric = 1.12; break;
+               case 7:
+                  current->metric = 1.20; break;
+               case 8:
+                  current->metric = 1.16; break;
+               case 9:
+                  current->metric = 0.91; break;
+               case 10:
+                  current->metric = 0.85; break;
+               case 11:
+                  current->metric = 0.83; break;
+               case 12:
+                  current->metric = 0.77; break;
+               case 13:
+                  current->metric = 0.76; break;
+               case 14:
+                  current->metric = 0.76; break;
+               case 15:
+                  current->metric = 0.77; break;
+               case 16:
+                  current->metric = 0.76; break;
+               case 17:
+                  current->metric = 0.05; break;
+               default:
+                  assert(0 && "how did this happen??");
+            }
+            current->metric = lowpass(current->metric, 0.25, 2.0);
+         }
+
+         current->log_factor = MAX((current->metric * current->threads - 1.0),1.0)/log(current->threads);
+         metric_sum += current->log_factor;
+         i++;
+      }
+
+      int available_threads = max_threads - ceil(bg_utilization - 0.5);
+      int remaining_rations = MAX(available_threads, 1);
+      float proc_ipc = ((float)(remaining_rations)) / metric_sum;
+
+      i=0;
+      HASH_ITER(hh, clients, current, tmp){
+         float exact_ration = current->log_factor * proc_ipc;
+         int min_ration = floor(exact_ration);
+         current->threads = min_ration==0?1:min_ration;
+         remaining_rations -= current->threads;
+         i++;
+      }
+
+      i=0;
+      HASH_ITER(hh, clients, current, tmp){
+         if(remaining_rations!=0){
+
+            float exact_ration = current->log_factor * proc_ipc;
+            int rounded_ration = roundf(exact_ration);
+            if(rounded_ration > current->threads){
+               current->threads++;
+               remaining_rations--;
+            }
+         }
+         if(logfilename){
+            fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, current->metric, current->threads);
+            //fflush(lf);
+         }
+      }
+      UNLOCK_CLIENTS;
+
+      usleep(REFEREE_PERIOD_US);
+   }
+}
+
 void scoreboard_body(void* data){
 #if CURSES_INTERFACE
    WINDOW *wnd;
@@ -465,13 +583,16 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "heqbl:")) != -1){
+    while( (c = getopt(argc, argv, "cheqbl:")) != -1){
        switch(c){
           case 'q':
              quiet = 1;
              break;
           case 'e':
              equipartitioning = 1;
+             break;
+          case 'c':
+             cheating = 1;
              break;
           case 'b':
              nobgload = 1;
@@ -481,7 +602,7 @@ int main(int argc, char **argv){
              break;
           case 'h':
           default:
-             printf("Usage: %s [-h] [-q] [-e] [-b] [-l logfile]\n\t-h\tdisplay this message\n\t-q\tbe quieter or something\n\t-b\tdon't monitor background load\n\t-l logfile\tlog allocations and efficiencies to logfile\n\t-e\tonly do strict equipartitioning\n", argv[0]);
+             printf("Usage: %s [-h] [-q] [-e] [-b] [-l logfile] [-c]\n\t-h\tdisplay this message\n\t-q\tbe quieter or something\n\t-b\tdon't monitor background load\n\t-l logfile\tlog allocations and efficiencies to logfile\n\t-e\tonly do strict equipartitioning\n\t-c\tuse hardcoded profiling info for pldi2013 experiment\n", argv[0]);
              exit(1);
              break;
        }
@@ -494,6 +615,8 @@ int main(int argc, char **argv){
     startuptime = rtclock();
 
     void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
+    referee_body = cheating?&cheating_referee_body:referee_body;
+
     pthread_t referee, reaper, scoreboard, lookout;
     pthread_rwlock_init(&clients_lock, NULL);
     pthread_create(&scoreboard, NULL, (void *(*)(void*))&scoreboard_body, NULL);
