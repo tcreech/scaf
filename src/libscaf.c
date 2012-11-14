@@ -280,6 +280,9 @@ int scaf_section_start(void* section){
 #endif
 
    scaf_section_ipc = 0.0;
+   if(!current_section->training_complete && scafd_available)
+      return current_threads-1;
+
    return current_threads;
 }
 
@@ -437,7 +440,7 @@ inline void scaf_training_end(int sig){
 
 int scaf_gomp_training_create(void (*fn) (void*), void *data){
    // First of all, only train if necessary.
-   if(current_section->training_complete || !(current_threads>1))
+   if(!scafd_available || current_section->training_complete || !(current_threads>1))
       return 0;
 
 #if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
@@ -456,7 +459,7 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
 
 void scaf_gomp_training_destroy(void){
    // First of all, only train if necessary.
-   if(current_section->training_complete || !(current_threads>1))
+   if(!scafd_available || current_section->training_complete || !(current_threads>1))
       return;
 
 #if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
