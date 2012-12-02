@@ -441,7 +441,7 @@ void cheating_referee_body(void* data){
             current->metric = 1.12966 / current->threads;
             if(current->threads==1)
                current->metric = 1;
-         }else if(strcmp(current->name, "lu.C.x")==0){
+         }else if(strcmp(current->name, "ua.C.x")==0){
             // Did some testing ahead of time to gather these efficiency
             // ratings. Note that the speedup is actually better than linear
             // for some time, which is good but has no special meaning for
@@ -450,37 +450,35 @@ void cheating_referee_body(void* data){
                case 1:
                   current->metric = 1; break;
                case 2:
-                  current->metric = 1.20; break;
+                  current->metric = 0.96; break;
                case 3:
-                  current->metric = 1.25; break;
+                  current->metric = 0.96; break;
                case 4:
-                  current->metric = 1.24; break;
+                  current->metric = 0.96; break;
                case 5:
-                  current->metric = 1.16; break;
+                  current->metric = 0.74; break;
                case 6:
-                  current->metric = 1.12; break;
+                  current->metric = 0.78; break;
                case 7:
-                  current->metric = 1.20; break;
+                  current->metric = 0.72; break;
                case 8:
-                  current->metric = 1.16; break;
-               case 9:
-                  current->metric = 0.91; break;
-               case 10:
-                  current->metric = 0.85; break;
-               case 11:
                   current->metric = 0.83; break;
+               case 9:
+                  current->metric = 0.67; break;
+               case 10:
+                  current->metric = 0.57; break;
+               case 11:
+                  current->metric = 0.57; break;
                case 12:
-                  current->metric = 0.77; break;
+                  current->metric = 0.60; break;
                case 13:
-                  current->metric = 0.76; break;
+                  current->metric = 0.59; break;
                case 14:
-                  current->metric = 0.76; break;
+                  current->metric = 0.51; break;
                case 15:
-                  current->metric = 0.77; break;
+                  current->metric = 0.48; break;
                case 16:
-                  current->metric = 0.76; break;
-               case 17:
-                  current->metric = 0.05; break;
+                  current->metric = 0.46; break;
                default:
                   assert(0 && "how did this happen??");
             }
