@@ -31,6 +31,10 @@
 #elif defined(__x86_64__)
 #define ORIG_ACCUM	(8 * ORIG_RAX)
 #define ARGREG	(8 * RDI)
+#elif defined(__tile__)
+// This is for TileGx, which is 64-bit. Guessing this stuff -- will need to be tested later.
+#define ORIG_ACCUM   (8 * TREG_SYSCALL_NR)
+#define ARG_REG      (8 * 0)
 #else
 #error unsupported architecture
 #endif
