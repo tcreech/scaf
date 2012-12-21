@@ -1,0 +1,180 @@
+commit f0dc830130c0d5e185d204921ecd4a5d8fbe4520
+Author: tcreech <tcreech@umd.edu>
+Date:   Tue Dec 4 12:00:57 2012 -0500
+
+    Super sloppy Tilera Tile-Gx port for PAPI 5.0.1. (Mostly investigative/experimental.)
+
+diff --git a/libpfm4/include/perfmon/perf_event.h b/libpfm4/include/perfmon/perf_event.h
+index 9c7f474..5534200 100644
+--- a/libpfm4/include/perfmon/perf_event.h
++++ b/libpfm4/include/perfmon/perf_event.h
+@@ -363,6 +363,11 @@ enum perf_callchain_context {
+ # define __NR_perf_event_open __NR_Linux + 296
+ #endif
+ #endif
++
++#ifdef __tilegx__
++# define __NR_perf_event_open 319
++#endif
++
+ #endif /* __NR_perf_event_open */
+ 
+ /*
+diff --git a/libpfm4/lib/pfmlib_perf_event_pmu.c b/libpfm4/lib/pfmlib_perf_event_pmu.c
+index 7fc73fa..23a69a8 100644
+--- a/libpfm4/lib/pfmlib_perf_event_pmu.c
++++ b/libpfm4/lib/pfmlib_perf_event_pmu.c
+@@ -1035,6 +1035,10 @@ pfmlib_pmu_t perf_event_support={
+ 	.pme_count		= PME_PERF_EVENT_COUNT,
+ 	.type			= PFM_PMU_TYPE_OS_GENERIC,
+ 	.max_encoding		= 1,
++// sorry.
++#if defined(__tilegx__)
++	.num_cntrs		= 4,
++#endif
+ 	.supported_plm		= PERF_PLM_ALL,
+ 	.pmu_detect		= pfm_perf_detect,
+ 	.pmu_init		= pfm_perf_init,
+diff --git a/linux-context.h b/linux-context.h
+index 2135695..62eb5c1 100644
+--- a/linux-context.h
++++ b/linux-context.h
+@@ -33,6 +33,9 @@ typedef ucontext_t hwd_ucontext_t;
+ #define OVERFLOW_ADDRESS(ctx) ctx.ucontext->uc_mcontext.arm_pc
+ #elif defined(__mips__)
+ #define OVERFLOW_ADDRESS(ctx) ctx.ucontext->uc_mcontext.pc
++#elif defined(__tilegx__)
++// This is a guess based on Tile/MIPS similarity in general.
++#define OVERFLOW_ADDRESS(ctx) ctx.ucontext->uc_mcontext.pc
+ #else
+ #error "OVERFLOW_ADDRESS() undefined!"
+ #endif
+diff --git a/linux-lock.h b/linux-lock.h
+index 741e352..c2d1fb9 100644
+--- a/linux-lock.h
++++ b/linux-lock.h
+@@ -221,6 +221,28 @@ static inline void __raw_spin_unlock(volatile unsigned int *lock)
+ }
+ #define  _papi_hwd_lock(lck) __raw_spin_lock(&_papi_hwd_lock_data[lck]);
+ #define  _papi_hwd_unlock(lck) __raw_spin_unlock(&_papi_hwd_lock_data[lck])
++
++/*******************/
++/* Tile-Gx         */
++/*******************/
++
++#elif defined(__tilegx__)
++#include <arch/atomic.h>
++#define papi_xchg_u32(pointer, value) arch_atomic_exchange(pointer, value)
++
++#define  _papi_hwd_lock(lck)                          \
++do {                                                    \
++  unsigned int retval;                                 \
++  do {                                                  \
++  retval = papi_xchg_u32(&_papi_hwd_lock_data[lck],MUTEX_CLOSED);  \
++  } while(retval != (unsigned int)MUTEX_OPEN);	        \
++} while(0)
++#define  _papi_hwd_unlock(lck)                          \
++do {                                                    \
++  unsigned int retval;                                 \
++  retval = papi_xchg_u32(&_papi_hwd_lock_data[lck],MUTEX_OPEN); \
++} while(0)
++
+ #else
+ 
+ #error "_papi_hwd_lock/unlock undefined!"
+diff --git a/linux-timer.c b/linux-timer.c
+index 0a3ce0a..7eff210 100644
+--- a/linux-timer.c
++++ b/linux-timer.c
+@@ -213,7 +213,7 @@ get_cycles( void )
+ /* POWER get_cycles()   */
+ /************************/
+ 
+-#elif (defined(__powerpc__) || defined(__arm__) || defined(__mips__))
++#elif (defined(__powerpc__) || defined(__arm__) || defined(__mips__)) || defined(__tilegx__)
+ /*
+  * It's not possible to read the cycles from user space on ppc970.
+  * There is a 64-bit time-base register (TBU|TBL), but its
+@@ -243,7 +243,7 @@ long long
+ _linux_get_real_cycles( void )
+ {
+ 	long long retval;
+-#if defined(HAVE_GETTIMEOFDAY)||defined(__powerpc__)||defined(__arm__)||defined(__mips__)
++#if defined(HAVE_GETTIMEOFDAY)||defined(__powerpc__)||defined(__arm__)||defined(__mips__)||defined(__tilegx__)
+ 
+ 	/* Crude estimate, not accurate in prescence of DVFS */
+ 
+diff --git a/mb.h b/mb.h
+index 5be4d48..39d6ceb 100644
+--- a/mb.h
++++ b/mb.h
+@@ -40,6 +40,16 @@
+ #define wmb()   asm volatile("sfence" ::: "memory")
+ #endif
+ 
++#elif defined(__tilegx__)
++/* This is lifted from arch/tile/include/asm/system.h in the (vanilla) 2.6.38.8 sources. */
++#define __sync()	__insn_mf()
++#define fast_mb()	__sync()
++#define fast_rmb()	__sync()
++#define fast_wmb()	__sync()
++#define mb()		fast_mb()
++#define rmb()		fast_rmb()
++#define wmb()		fast_wmb()
++
+ #else
+ #error Need to define mb and rmb for this architecture!
+ #error See the kernel source directory: arch/<arch>/include/asm/system.h file
+diff --git a/papi_events.csv b/papi_events.csv
+index 27b6ba9..b17d958 100644
+--- a/papi_events.csv
++++ b/papi_events.csv
+@@ -1416,6 +1416,17 @@ PRESET,PAPI_FUL_ICY,NOT_DERIVED,CPU_INSDUAL
+ PRESET,PAPI_L2_TCM,NOT_DERIVED,CPU_L2MISSALL
+ PRESET,PAPI_L2_TCA,NOT_DERIVED,CPU_L2REQ
+ #
++CPU,perf
++# Tile-Gx stuff? Should get this properly recognized by libpfm4...
++# This is just a random smattering of stuff that I found. There are many more
++# events, but these are just the ones that obviously correspond to papi
++# presets.
++PRESET,PAPI_TOT_CYC,NOT_DERIVED,CYCLES
++PRESET,PAPI_TOT_INS,NOT_DERIVED,INSTRUCTIONS
++PRESET,PAPI_REF_CYC,NOT_DERIVED,REF-CYCLES
++PRESET,PAPI_BR_MSP,NOT_DERIVED,BRANCH-MISSES
++PRESET,PAPI_BR_INS,NOT_DERIVED,BRANCHES
++#
+ CPU,BGQ
+ #
+ # Conditional Branching
+diff --git a/papi_libpfm4_events.c b/papi_libpfm4_events.c
+index e7a6966..a7f647a 100644
+--- a/papi_libpfm4_events.c
++++ b/papi_libpfm4_events.c
+@@ -1364,7 +1364,16 @@ _papi_libpfm4_init(papi_vector_t *my_vector, int cidx) {
+ 	    SUBDBG("\t  %s is default\n",pinfo.name);
+ 	    memcpy(&default_pmu,&pinfo,sizeof(pfm_pmu_info_t));
+ 	    found_default++;
++	 }else if( (pinfo.type==PFM_PMU_TYPE_OS_GENERIC) ){
++#if defined(__tilegx__)
++	    SUBDBG("\t  %s is default\n",pinfo.name);
++            SUBDBG("\t\tpinfo.name=%s\n");
++	    SUBDBG("\t\tpinfo.desc=%s\n",pinfo.name, pinfo.desc);
++	    memcpy(&default_pmu,&pinfo,sizeof(pfm_pmu_info_t));
++	    found_default++;
++#endif
+ 	 }
++              
+       }
+    }
+    SUBDBG("%d native events detected on %d pmus\n",ncnt,detected_pmus);
+@@ -1381,6 +1390,9 @@ _papi_libpfm4_init(papi_vector_t *my_vector, int cidx) {
+ 
+    my_vector->cmp_info.num_native_events = ncnt;
+ 
++   SUBDBG("\tdefault_pmu.num_cntrs=%d\n", default_pmu.num_cntrs);
++   SUBDBG("\tdefault_pmu.num_fixed_cntrs=%d\n", default_pmu.num_fixed_cntrs);
++
+    my_vector->cmp_info.num_cntrs = default_pmu.num_cntrs+
+                                   default_pmu.num_fixed_cntrs;
+ 
