@@ -217,7 +217,7 @@ void inline delete_client(scaf_client *c){
 }
 
 void inline print_clients(void){
-   clear();
+   move(0,0); clrtobot();
    int i;
    int max = HASH_COUNT(clients);
    start_color();
