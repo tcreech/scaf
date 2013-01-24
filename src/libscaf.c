@@ -417,9 +417,7 @@ inline void scaf_training_end(int sig){
    sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
    assert(0==zmq_connect(scafd, parent_connect_string));
    zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(float));
-   float *result_ipc = (float*)(zmq_msg_data(&request));
-   *result_ipc = scaf_section_ipc;
+   assert(0==zmq_msg_init_data(&request, &scaf_section_ipc, sizeof(float), NULL, NULL));
    
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
