@@ -61,6 +61,7 @@ void *scafd;
 void *scafd_context;
 
 int scafd_available;
+int scaf_disable_training = 0;
 int scaf_mypid;
 int omp_max_threads;
 int scaf_nullfd;
@@ -165,6 +166,12 @@ void* scaf_init(void **context_p){
       scaf_feedback_freq = atoi(fbf);
    else
       scaf_feedback_freq = 1;
+
+   char *notrain = getenv("SCAF_DISABLE_TRAINING");
+   if(notrain)
+     scaf_disable_training = atoi(notrain);
+   else
+     scaf_disable_training = 0;
 
    void *context = zmq_init(1);
    *context_p = context;
@@ -442,7 +449,7 @@ inline void scaf_training_end(int sig){
 
 int scaf_gomp_training_create(void (*fn) (void*), void *data){
    // First of all, only train if necessary.
-   if(!scafd_available || current_section->training_complete || !(current_threads>1))
+   if(scaf_disable_training || !scafd_available || current_section->training_complete || !(current_threads>1))
       return 0;
 
 #if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
@@ -461,7 +468,7 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
 
 void scaf_gomp_training_destroy(void){
    // First of all, only train if necessary.
-   if(!scafd_available || current_section->training_complete || !(current_threads>1))
+   if(scaf_disable_training || !scafd_available || current_section->training_complete || !(current_threads>1))
       return;
 
 #if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
