@@ -136,7 +136,11 @@ int scaf_connect(void *scafd){
 
    // Stop and poll just to see if we timeout. If no reply, then assume there
    // is no scafd for the rest of execution.
+#if ZMQ_VERSION_MAJOR > 2
+   int rc = zmq_poll(&pi, 1, SCAFD_TIMEOUT_SECONDS*1000);
+#else
    int rc = zmq_poll(&pi, 1, SCAFD_TIMEOUT_SECONDS*1000000);
+#endif
    if(rc == 1){
       zmq_msg_t reply;
       zmq_msg_init(&reply);
