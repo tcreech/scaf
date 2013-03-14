@@ -54,6 +54,10 @@
 // Disable training
 #define SCAF_ENABLE_TRAINING 1
 
+// Limit measured efficiency to this value. This can restrict the effects of
+// timing glitches resulting in crazy values.
+#define SCAF_MEASURED_EFF_LIMIT 2.0
+
 #define SCAF_LOWPASS_TIME_CONSTANT (2.0)
 
 // PAPI high-level event to measure scalability by
@@ -334,7 +338,7 @@ void scaf_section_end(void){
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
-   scaf_section_efficiency = min(1.0, scaf_section_ipc / current_section->training_serial_ipc);
+   scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->training_serial_ipc);
 
 #if 0 // We don't do anything at all with "SECTION_END" messages.
    zmq_msg_t request;
