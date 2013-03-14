@@ -45,6 +45,9 @@
 // Set this to 1 if parallel execution should wait for training to finish;
 // otherwise it will be forced to terminate early.
 #define SCAF_PARALLEL_WAIT_FOR_TRAINING 0
+// Set to 1 if SCAF should enforce a hard limit on the amount of time spent
+// running a serial experiment.
+#define SCAF_ENFORCE_TRAINING_TIME_LIMIT 0
 // The maximum amount of time that a training fork will run for.
 #define SCAF_TRAINING_TIME_LIMIT_SECONDS 10
 
@@ -384,7 +387,8 @@ inline void scaf_training_start(void){
    signal(SIGALRM, scaf_training_end);
 
    //printf(BLUE "SCAF training started." RESET "\n");
-   alarm(SCAF_TRAINING_TIME_LIMIT_SECONDS);
+   if(SCAF_ENFORCE_TRAINING_TIME_LIMIT)
+      alarm(SCAF_TRAINING_TIME_LIMIT_SECONDS);
 }
 
 inline void scaf_training_end(int sig){
