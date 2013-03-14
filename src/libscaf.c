@@ -53,6 +53,11 @@
 
 #define SCAF_LOWPASS_TIME_CONSTANT (2.0)
 
+// PAPI high-level event to measure scalability by
+//#define PAPI_HL_MEASURE PAPI_flops
+//#define PAPI_HL_MEASURE PAPI_flips
+#define PAPI_HL_MEASURE PAPI_ipc
+
 void* scaf_gomp_training_control(void *unused);
 scaf_client_training_description scaf_training_desc;
 
@@ -248,6 +253,7 @@ int scaf_section_start(void* section){
    float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
    float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / scaf_latest_efficiency_duration;
    float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, SCAF_LOWPASS_TIME_CONSTANT);
+   //printf(BLUE "Latest: %f; raw: %f; stime: %f; ptime %f; seff: %f; peff: %f\n" RESET, scaf_latest_efficiency_smooth, scaf_latest_efficiency, scaf_serial_duration, scaf_section_duration, scaf_serial_efficiency, scaf_section_efficiency);
 
    // Communicate the latest results with the SCAF daemon and get an allocation update, but only if this wouldn't exceed our desired communication rate.
    if(!skip_this_communication){
@@ -284,7 +290,7 @@ int scaf_section_start(void* section){
    {
       float ptime, ipc;
       long long int ins;
-      int ret = PAPI_ipc(&scaf_section_start_time, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
@@ -310,7 +316,7 @@ void scaf_section_end(void){
    {
       float rtime, ptime, ipc;
       long long int ins;
-      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
       scaf_section_ipc += ipc;
       scaf_section_end_time = rtime;
@@ -362,7 +368,7 @@ inline void scaf_training_start(void){
       // Begin gathering information with PAPI.
       float rtime, ptime, ipc;
       long long int ins;
-      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
    }
@@ -513,11 +519,11 @@ void scaf_gomp_training_destroy(void){
    zmq_close(training_child);
 
    pthread_join(scaf_training_desc.control_pthread, NULL);
-   current_section->training_threads = current_threads;
+   current_section->training_threads = current_threads-1;
    current_section->training_serial_ipc = response;
    current_section->training_parallel_ipc = scaf_section_ipc;
-   current_section->training_ipc_eff = scaf_section_ipc / response / current_threads;
-   current_section->training_ipc_speedup = ((float)current_threads) * current_section->training_ipc_eff;
+   current_section->training_ipc_eff = scaf_section_ipc / response;
+   current_section->training_ipc_speedup = ((float)current_section->training_threads) * current_section->training_ipc_eff;
    current_section->training_complete = 1;
    //printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
 }
