@@ -209,6 +209,9 @@ void* scaf_init(void **context_p){
    void *requester = zmq_socket (context, ZMQ_REQ);
 #if HAVE_LIBPAPI
    PAPI_thread_init(pthread_self);
+   int initval = PAPI_library_init(PAPI_VER_CURRENT);
+   assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
+   assert(PAPI_multiplex_init() == PAPI_OK);
 #endif
    scaf_master_thread = pthread_self();
 
@@ -388,6 +391,10 @@ inline void scaf_training_start(void){
 #if(HAVE_LIBPAPI)
    {
       // Begin gathering information with PAPI.
+      int initval = PAPI_library_init(PAPI_VER_CURRENT);
+      assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
+      assert(PAPI_multiplex_init() == PAPI_OK);
+
       float rtime, ptime, ipc;
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
