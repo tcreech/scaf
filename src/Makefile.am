@@ -5,7 +5,7 @@ scafd_CFLAGS =
 
 scafc_SOURCES = scafc.c scaf.h libscaf.c uthash.h
 scafc_LDADD = -lm
-scafc_LDFLAGS = -fopenmp
+scafc_LDFLAGS = -fopenmp -lgomp
 scafc_CFLAGS = -fopenmp
 
 AUTOMAKE_OPTIONS = gnu

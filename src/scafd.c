@@ -24,6 +24,10 @@
 int omp_get_max_threads();
 #endif
 
+#if defined(__sun)
+#include "solaris_trace_utils.h"
+#endif //__sun
+
 #define MAX_CLIENTS 8
 
 #define CURSES_INTERFACE 1
@@ -82,8 +86,10 @@ int pid_is_scaf_controlled(int pid, int* pid_list, int list_size){
 // Go through a /proc/ filesystem and get jiffy usage for all processes not
 // under scafd's control. This takes 1 second to run due to a 1 second sleep.
 // Might possibly work on FreeBSD as is if we use /compat/linux/proc/ instead
-// of /proc/.
+// of /proc/. Can certainly be implemented for SunOS, but this is TODO. (SunOS
+// version of this acts as if everything is idle always.)
 float proc_get_cpus_used(void){
+#if defined(__linux__)
    // Return immediately if the user disabled load monitoring
    if(nobgload){
       sleep(1);
@@ -173,9 +179,15 @@ float proc_get_cpus_used(void){
 
    free(pid_list);
    return utilization;
+#endif //__linux__
+
+#if defined(__sun)
+      sleep(1);
+      return 0.0;
+#endif //__sun
 }
 
-scaf_client inline *find_client(int client_pid){
+scaf_client *find_client(int client_pid){
    scaf_client* c;
    HASH_FIND_INT(clients, &client_pid, c);
    return c;
@@ -187,6 +199,7 @@ char* gnu_basename(char *path){
 }
 
 void get_name_from_pid(int pid, char *buf){
+#if defined(__linux__)
    char procpath[64];
    char exe[1024];
    sprintf(procpath, "/proc/%d/exe", pid);
@@ -199,9 +212,14 @@ void get_name_from_pid(int pid, char *buf){
       char name[5] = "[??]\0";
       strncpy(buf, name, 5);
    }
+#endif //__linux__
+#if defined(__sun)
+   psinfo_t pi = *__sol_get_proc_info(pid);
+   strncpy(buf, pi.pr_fname, PRFNSZ);
+#endif //__sun
 }
 
-void inline add_client(int client_pid, int threads, void* client_section){
+void add_client(int client_pid, int threads, void* client_section){
    scaf_client *c = (scaf_client*)malloc(sizeof(scaf_client));
    bzero((void*)c, sizeof(scaf_client));
    c->pid = client_pid;
@@ -212,11 +230,11 @@ void inline add_client(int client_pid, int threads, void* client_section){
    HASH_ADD_INT(clients, pid, c);
 }
 
-void inline delete_client(scaf_client *c){
+void delete_client(scaf_client *c){
    HASH_DEL(clients, c);
 }
 
-void inline print_clients(void){
+void print_clients(void){
    move(0,0); clrtobot();
    int i;
    int max = HASH_COUNT(clients);
@@ -261,7 +279,7 @@ void inline print_clients(void){
    refresh();
 }
 
-int inline get_per_client_threads(int num_clients){
+int get_per_client_threads(int num_clients){
    if(num_clients >= max_threads)
       return 1;
 
@@ -271,7 +289,7 @@ int inline get_per_client_threads(int num_clients){
    return max_threads / num_clients;
 }
 
-int inline get_extra_threads(int num_clients){
+int get_extra_threads(int num_clients){
    if(num_clients >= max_threads)
       return 0;
 
@@ -281,7 +299,7 @@ int inline get_extra_threads(int num_clients){
    return max_threads % num_clients;
 }
 
-int inline perform_client_request(scaf_client_message *client_message){
+int perform_client_request(scaf_client_message *client_message){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
@@ -414,7 +432,7 @@ void equi_referee_body(void* data){
 // Discrete IIR, single-pole lowpass filter. Used in scafd only by the referee
 // using a priori profiling.  Time constant rc is expected to be the same
 // across calls. Inputs x and dt are the data and time interval, respectively.
-inline float lowpass(float x, float dt, float rc){
+float lowpass(float x, float dt, float rc){
    static float yp = 0.5;
    float alpha = dt / (rc + dt);
    yp = alpha * x + (1.0-alpha) * yp;

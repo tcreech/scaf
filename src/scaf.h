@@ -17,7 +17,17 @@
     __typeof__ (b) _b = (b); \
     _a < _b ? _a : _b; })
 
+#if defined(__linux__)
 #define __NR_scaf_training_done 1337
+#endif //__linux__
+
+#if defined(__sun)
+// This is SYS_ntp_gettime on Solaris 10. We're stealing it. Basically SCAF
+// doesn't support codes which do NTP stuff. (We can't use an unused number as
+// in Linux since Solaris will kill a program making an invalid indirect
+// syscall before even giving it back to the tracing process.
+#define __NR_scaf_training_done 248
+#endif //__sun
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9
 
@@ -84,9 +94,9 @@ void scaf_section_end(void);
 int scaf_gomp_training_create(void (*fn) (void*), void *data);
 void scaf_gomp_training_destroy(void);
 
-inline void scaf_training_start(void);
+static inline void scaf_training_start(void);
 
-inline void scaf_training_end(int);
+static inline void scaf_training_end(int);
 
 struct proc_stat {
    int pid;         // %d

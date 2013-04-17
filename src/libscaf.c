@@ -18,12 +18,14 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/reg.h>
-#include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
-#include <linux/ptrace.h>
 #include <assert.h>
 #include <pthread.h>
+
+#if defined(__linux__)
+#include <sys/ptrace.h>
+#include <linux/ptrace.h>
 
 #if defined(__i386__)
 #define ORIG_ACCUM	(4 * ORIG_EAX)
@@ -32,12 +34,20 @@
 #define ORIG_ACCUM	(8 * ORIG_RAX)
 #define ARGREG	(8 * RDI)
 #elif defined(__tilegx__)
-// This is for TileGx, which is 64-bit. Guessing this stuff -- will need to be tested later.
+// This is for TileGx, which is 64-bit. Guessing this stuff mostly.
 #define ORIG_ACCUM   (8 * TREG_SYSCALL_NR)
 #define ARGREG      (8 * 0)
 #else
 #error unsupported architecture
 #endif
+
+#endif //__linux__
+
+#if defined(__sun)
+#include "solaris_trace_utils.h"
+// Solaris has actual APIs for tracing syscalls and peeking at arguments, so
+// none of the above hackery required for Linux is necessary.
+#endif //__sun
 
 #define SCAFD_TIMEOUT_SECONDS 1
 
@@ -96,7 +106,11 @@ scaf_client_section *sections = NULL;
 // Discrete IIR, single-pole lowpass filter.
 // Time constant rc is expected to be the same across calls. Inputs x and dt
 // are the data and time interval, respectively.
+#if defined(__GNUC__)
 inline float lowpass(float x, float dt, float rc){
+#else
+float lowpass(float x, float dt, float rc){
+#endif //__GNUC__
    static float yp = 0.5;
    float alpha = dt / (rc + dt);
    yp = alpha * x + (1.0-alpha) * yp;
@@ -131,10 +145,11 @@ int scaf_connect(void *scafd){
    pi.socket = scafd;
    pi.events = ZMQ_POLLIN;
 
-   zmq_connect(scafd, SCAF_CONNECT_STRING);
+   assert(zmq_connect(scafd, SCAF_CONNECT_STRING) == 0);
    // send new client request and get initial num threads
    zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   int retv = zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   assert(retv==0);
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
    scaf_message->message = SCAF_NEW_CLIENT;
    scaf_message->pid = scaf_mypid;
@@ -396,8 +411,10 @@ inline void scaf_training_start(void){
 }
 
 inline void scaf_training_end(int sig){
-   // Ignore all the signals which we might still get.
+
    syscall(__NR_scaf_training_done);
+
+   // Ignore all the signals which we might still get.
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
@@ -559,16 +576,23 @@ void* scaf_gomp_training_control(void *unused){
     setpgid(0, scaf_mypid);
     // Start up our timing stuff with SCAF.
     scaf_training_start();
+
+
+#if defined(__linux__)
     // Request that we be traced by the parent. The parent will be in charge of
-    // allowing/disallowing system calls, as well as killing us.
+    // allowing/disallowing system calls, as well as killing us. Unnecessary in
+    // SunOS: we just issue a stop here and wait for the parent thread to run
+    // us again with tracing enabled.
     ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-    kill(getpid(), SIGSTOP);
+#endif //__linux__
+#if defined(__sun)
+    __sol_proc_force_stop_nowait(getpid());
+#endif //__sun
     // Unblock signals.
     sigprocmask(SIG_UNBLOCK, &sigs_int_alrm, NULL);
     // Run the parallel section in serial. The parent will intercept all
     // syscalls and ensure that we don't affect the state of the machine
-    // incorrectly. An alarm has been set to keep this from taking arbitrarily
-    // long.
+    // incorrectly.
     fn(data);
     // When finished, send ourselves SIGINT to end the training.
     scaf_training_end(0);
@@ -585,6 +609,7 @@ void* scaf_gomp_training_control(void *unused){
   }
 
   int status;
+#if defined(__linux__)
   if (waitpid(expPid, &status, 0) < 0) {
     perror("SCAF waitpid");
     abort();
@@ -592,6 +617,13 @@ void* scaf_gomp_training_control(void *unused){
 
   assert(WIFSTOPPED(status));
   assert(WSTOPSIG(status) == SIGSTOP);
+#endif //__linux__
+
+#if defined(__sun)
+  __sol_proc_stop_wait(expPid);
+  __sol_proc_trace_sigs(expPid);
+  __sol_proc_trace_syscalls(expPid);
+#endif
 
   // Meet the other thread at the barrier. It won't start running the proper
   // instance of the section until we hit this barrier. At this point in the
@@ -602,12 +634,33 @@ void* scaf_gomp_training_control(void *unused){
   int foundRaW = 0;
   int foundW = 0;
   while(1){
+#if defined(__linux__)
     if (ptrace(PTRACE_SYSCALL, expPid, NULL, NULL) < 0) {
       perror("SCAF ptrace(PTRACE_SYSCALL, ...)");
       ptrace(PTRACE_KILL, expPid, NULL, NULL);
       abort();
     }
+#endif //__linux__
+#if defined(__sun)
+    if(foundW)
+       __sol_proc_run_clearsyscalls(expPid);
+    else
+       __sol_proc_run(expPid);
 
+    __sol_proc_stop_wait(expPid);
+    int syscall = -1;
+    int signal = -1;
+    lwpstatus_t ls = __sol_get_proc_status(expPid)->pr_lwp;
+    if(ls.pr_why == PR_SIGNALLED){
+        signal = ls.pr_what;
+    }else if(ls.pr_why == PR_SYSENTRY){
+        syscall = ls.pr_what;
+    }
+    assert(signal >= 0 || syscall >= 0);
+    assert(!(signal >= 0 && syscall >= 0));
+#endif //__sun
+
+#if defined(__linux__)
     if (waitpid(expPid, &status, 0) < 0) {
       perror("SCAF waitpid");
       ptrace(PTRACE_KILL, expPid, NULL, NULL);
@@ -619,57 +672,114 @@ void* scaf_gomp_training_control(void *unused){
       ptrace(PTRACE_KILL, expPid, NULL, NULL);
       break;
     }
+#endif //__linux__
 
+#if defined(__linux__)
     if(WSTOPSIG(status)==SIGALRM){
+#endif //__linux__
+#if defined(__sun)
+    if(signal>=0 && signal==SIGALRM){
+#endif //__sun
+
       // The training has run long enough. We will stop it, but first let the
       // function run for another small period of time. This is just an easy
       // way to ensure that our training measurements have a minimum allowed
       // runtime.
+#if defined(__linux__)
       ptrace(PTRACE_CONT, expPid, NULL, 0);
+#endif //__linux__
+#if defined(__sun)
+      __sol_proc_run_clearsigs(expPid);
+#endif //__sun
       usleep(100000);
       kill(expPid, SIGALRM);
+#if defined(__linux__)
       waitpid(expPid, &status, 0);
+#endif //__linux__
+#if defined(__sun)
+      __sol_proc_stop_wait(expPid);
+#endif //__sun
+#if defined(__linux__)
       ptrace(PTRACE_CONT, expPid, NULL, SIGALRM);
+#endif //__linux__
+#if defined(__sun)
+      __sol_proc_notrace(expPid);
+      __sol_proc_run(expPid);
+#endif //__sun
       break;
     }
 
+#if defined(__linux__)
     int syscall = ptrace(PTRACE_PEEKUSER, expPid, ORIG_ACCUM, 0);
-    //printf("Parent: child has called syscall nr %d\n", syscall);
+#endif //__linux__
 
+    assert(syscall >= 0);
     if(syscall == __NR_scaf_training_done){
       //printf("Parent: this is a bogus syscall that indicates the training ender is in control. We'll stop tracing.\n");
+#if defined(__linux__)
       ptrace(PTRACE_DETACH, expPid, NULL, NULL);
+#endif //__linux__
+#if defined(__sun)
+      __sol_proc_notrace(expPid);
+      __sol_proc_run_clearsyscalls(expPid);
+#endif
       break;
     }
 
+#if defined(__linux__)
     if(syscall == __NR_write){
       // Replace the fd with one pointing to /dev/null. We'll keep track of any
       // following reads to prevent violating RaW hazards through the
       // filesystem. (If necessary, we could do this more precisely by tracking
       // RaWs per fd.)
       ptrace(PTRACE_POKEUSER, expPid, ARGREG, scaf_nullfd);
+#endif //__linux__
+#if defined(__sun)
+    if(syscall == SYS_write){
+#endif //__sun
       foundW = 1;
     }
+
+#if defined(__linux__)
     if(syscall == __NR_read && foundW)
+#endif //__linux__
+#if defined(__sun)
+    if(syscall == SYS_read && foundW)
+#endif //__sun
       foundRaW = 1;
 
+#if defined(__linux__)
     if((syscall != __NR_rt_sigprocmask && syscall != __NR_rt_sigaction &&
           syscall != __NR_read && syscall != __NR_nanosleep &&
           syscall != __NR_write && syscall != __NR_restart_syscall) || foundRaW){
+#endif //__linux__
+#if defined(__sun)
+    if((syscall != SYS_sigprocmask && syscall != SYS_sigaction &&
+          syscall != SYS_read && syscall != SYS_nanosleep && syscall !=
+          SYS_write && syscall != SYS_lwp_sigmask && syscall != SYS_close &&
+          syscall != SYS_schedctl )
+          || foundRaW){
+#endif //__sun
       // This is not one of the syscalls deemed ``safe''. (Its completion by
       // the kernel may affect the correctness of the program.) We must stop
       // the training fork now.
+      printf("Parent: child has behaved badly (section %p, syscall %d). Stopping it.\n", fn, syscall);
+#if defined(__linux__)
       void *badCall = (void*)0xbadCa11;
       if (ptrace(PTRACE_POKEUSER, expPid, ORIG_ACCUM, badCall) < 0) {
         perror("SCAF ptrace(PTRACE_POKEUSER, ...)");
         ptrace(PTRACE_KILL, expPid, NULL, NULL);
         abort();
       }
-      printf("Parent: child has behaved badly (section %p). Stopping it.\n", fn);
       ptrace(PTRACE_CONT, expPid, NULL, SIGINT);
+#endif //__linux__
+#if defined(__sun)
+      kill(expPid, SIGINT);
+      __sol_proc_run_clearsyscalls(expPid);
+#endif //__sun
       break;
     }
-  }
+  } // while(1)
 
   // We will always have killed the child by now.
   waitpid(expPid, &status, 0);
