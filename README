@@ -4,17 +4,23 @@ Repository contains only bare autotools inputs. Run the following to generate st
 
 autoreconf --install
 
-NOTE: This implementation of scaf requires zeromq. If it is not in a standard place, you can specify its location to configure:
-./configure ... --with-zeromq=/opt/ ...
+NOTE: This implementation of scaf requires zeromq and PAPI. PAPI is generally
+the largest barrier when porting to a new system. Be sure to specify the
+locations of PAPI and zeromq with CPPFLAGS and LDFLAGS to configure.
 
 Then run this to build a source tarball to distribute:
 make dist
 
 Of course, you can also do the standard ./configure && make install.
 
+TESTED PLATFORMS:
+- x86_64 on Linux, including 2x Opteron 6212s (16 threads), 2x Nahalem Xeons (8 threads), and SGI UV 2000 (512-1024 cores)
+- TileGx on Linux (36 cores)
+- Sparc T2 on Solaris 10 (64 threads)
+
 LIBGOMP INSTRUCTIONS:
 
-Patch GCC sources (patch is for 4.4).
+Patch GCC sources (patch is for 4.4, seems to work fine on at least 4.6 too).
 Rebuild with configure and 'make all-target-libgomp'.
 I haven't figured this out 100% yet, but you might have to grok the Make output and manually rerun the linker to get a libgomp.so which depends on your libscaf.so, which should in turn depend on libzmq.so. If it turns out these layers of dependences aren't supported then I'll have to figure something else out. (Like linking in libscaf and libzmq statically into libgomp?)
 
