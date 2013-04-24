@@ -15,6 +15,7 @@
 #include <zmq.h>
 #include <curses.h>
 #include <time.h>
+#include <strings.h>
 #include "scaf.h"
 #include "uthash.h"
 

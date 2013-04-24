@@ -208,7 +208,7 @@ void* scaf_init(void **context_p){
    *context_p = context;
    void *requester = zmq_socket (context, ZMQ_REQ);
 #if HAVE_LIBPAPI
-   PAPI_thread_init(pthread_self);
+   PAPI_thread_init((unsigned long (*)(void) )pthread_self);
    int initval = PAPI_library_init(PAPI_VER_CURRENT);
    assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
    assert(PAPI_multiplex_init() == PAPI_OK);
@@ -699,7 +699,7 @@ void* scaf_gomp_training_control(void *unused){
       __sol_proc_run_clearsigs(expPid);
 #endif //__sun
       usleep(100000);
-      kill(expPid, SIGALRM);
+      __sol_proc_setsig(expPid, SIGALRM);
 #if defined(__linux__)
       waitpid(expPid, &status, 0);
 #endif //__linux__
@@ -722,7 +722,7 @@ void* scaf_gomp_training_control(void *unused){
 
     assert(syscall >= 0);
     if(syscall == __NR_scaf_training_done){
-      //printf("Parent: this is a bogus syscall that indicates the training ender is in control. We'll stop tracing.\n");
+      //printf(RED "Parent: this is a bogus syscall that indicates the training ender is in control. We'll stop tracing.\n" RESET);
 #if defined(__linux__)
       ptrace(PTRACE_DETACH, expPid, NULL, NULL);
 #endif //__linux__
@@ -761,10 +761,7 @@ void* scaf_gomp_training_control(void *unused){
           syscall != __NR_write && syscall != __NR_restart_syscall) || foundRaW){
 #endif //__linux__
 #if defined(__sun)
-    if((syscall != SYS_sigprocmask && syscall != SYS_sigaction &&
-          syscall != SYS_read && syscall != SYS_nanosleep && syscall !=
-          SYS_write && syscall != SYS_lwp_sigmask && syscall != SYS_close &&
-          syscall != SYS_schedctl )
+    if(( syscall != SYS_read && syscall != SYS_write )
           || foundRaW){
 #endif //__sun
       // This is not one of the syscalls deemed ``safe''. (Its completion by
@@ -781,7 +778,8 @@ void* scaf_gomp_training_control(void *unused){
       ptrace(PTRACE_CONT, expPid, NULL, SIGINT);
 #endif //__linux__
 #if defined(__sun)
-      kill(expPid, SIGINT);
+      __sol_proc_setsig(expPid, SIGINT);
+      __sol_proc_notrace(expPid);
       __sol_proc_run_clearsyscalls(expPid);
 #endif //__sun
       break;

@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <sys/syscall.h>
 #define MIN_STR_LEN 1024
 
 // Declarations
@@ -23,6 +24,7 @@ typedef struct {
       sigset_t signals;
       sysset_t syscalls;
       fltset_t faults;
+      siginfo_t siginfo;
    } arg;
 } pctl_t;
 
@@ -37,6 +39,8 @@ static inline void __sol_proc_force_stop_nowait(const pid_t pid);
 static inline void __sol_proc_run_clearsigs(const pid_t pid);
 
 static inline void __sol_proc_run_clearsyscalls(const pid_t pid);
+
+static inline void __sol_proc_setsig(const pid_t pid, int signum);
 
 static inline void __sol_proc_run(const pid_t pid);
 
@@ -167,6 +171,25 @@ inline void __sol_proc_trace_syscalls(const pid_t pid){
    ctl.cmd = PCSENTRY;
    premptyset(&ctl.arg.syscalls);
    prfillset(&ctl.arg.syscalls);
+
+   // These are ``safe'' syscalls SCAF will never care about. This is handled
+   // differently than in Linux: Linux stops on all syscalls and does nothing
+   // on safe calls. Solaris doesn't stop on safe calls as per below. This
+   // allows the Solaris implementation to be a bit faster for code with many
+   // syscalls, which is good because there tends to be more code like this on
+   // SPARC. (Calling tons of SYS_brk, for example.)
+   // TODO: There are surely manymany more of safe syscalls which can be added
+   //       here as discovered.
+   prdelset(&ctl.arg.syscalls, SYS_sigprocmask);
+   prdelset(&ctl.arg.syscalls, SYS_sigaction);
+   prdelset(&ctl.arg.syscalls, SYS_nanosleep);
+   prdelset(&ctl.arg.syscalls, SYS_lwp_sigmask);
+   prdelset(&ctl.arg.syscalls, SYS_close);
+   prdelset(&ctl.arg.syscalls, SYS_fstat64);
+   prdelset(&ctl.arg.syscalls, SYS_schedctl);
+   prdelset(&ctl.arg.syscalls, SYS_ioctl);
+   prdelset(&ctl.arg.syscalls, SYS_brk);
+
    size = sizeof (long) + sizeof (sysset_t);
 
    __sol_write_proc_ctl(pid, &ctl, size);
@@ -229,6 +252,21 @@ static inline psinfo_t* __sol_get_proc_info (const pid_t pid){
    close (fd);
 
    return &proc;
+}
+
+static inline void __sol_proc_setsig(const pid_t pid, int signum){
+   pctl_t ctl;
+
+   size_t size;
+   int err;
+
+   ctl.cmd = PCSSIG;
+   ctl.arg.siginfo.si_signo = signum;
+   ctl.arg.siginfo.si_code = SI_USER;
+   ctl.arg.siginfo.si_errno = 0;
+   size = sizeof (long) + sizeof (siginfo_t);
+
+   __sol_write_proc_ctl(pid, &ctl, size);
 }
 
 #endif //SOLARIS_TRACE_UTILS_H
