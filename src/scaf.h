@@ -94,10 +94,6 @@ void scaf_section_end(void);
 int scaf_gomp_training_create(void (*fn) (void*), void *data);
 void scaf_gomp_training_destroy(void);
 
-static inline void scaf_training_start(void);
-
-static inline void scaf_training_end(int);
-
 struct proc_stat {
    int pid;         // %d
    char comm[256];    // %s
