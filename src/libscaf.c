@@ -68,7 +68,11 @@
 // timing glitches resulting in crazy values.
 #define SCAF_MEASURED_EFF_LIMIT 2.0
 
+#if defined(__sun)
+#define SCAF_LOWPASS_TIME_CONSTANT (15.0)
+#else //__sun
 #define SCAF_LOWPASS_TIME_CONSTANT (2.0)
+#endif //__sun
 
 // PAPI high-level event to measure scalability by
 //#define PAPI_HL_MEASURE PAPI_flops
@@ -77,6 +81,8 @@
 
 void* scaf_gomp_training_control(void *unused);
 scaf_client_training_description scaf_training_desc;
+static inline void scaf_training_start(void);
+static inline void scaf_training_end(int);
 
 int did_scaf_startup;
 void *scafd;
@@ -445,7 +451,7 @@ inline void scaf_training_end(int sig){
       // Get the results from PAPI.
       float rtime, ptime, ipc;
       long long int ins;
-      int ret = PAPI_ipc(&rtime, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
       scaf_section_ipc = ipc;
       scaf_section_end_time = rtime;
@@ -784,6 +790,7 @@ void* scaf_gomp_training_control(void *unused){
 #endif //__sun
       break;
     }
+
   } // while(1)
 
   // We will always have killed the child by now.
