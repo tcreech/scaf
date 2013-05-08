@@ -413,15 +413,18 @@ void equi_referee_body(void* data){
       int available_threads = max_threads - ceil(bg_utilization - 0.5);
       int remaining_rations = MAX(available_threads, 1);
 
-      int per_client = remaining_rations / num_clients;
-      int extra = remaining_rations % num_clients;
+      if(num_clients > 0){
+         int per_client = remaining_rations / num_clients;
+         int extra = remaining_rations % num_clients;
 
-      i=0;
-      HASH_ITER(hh, clients, current, tmp){
-         current->threads = per_client + (i<extra?1:0);
-         if(logfilename){
-            fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, 0.5, current->threads);
-            //fflush(lf);
+         i=0;
+         HASH_ITER(hh, clients, current, tmp){
+            current->threads = per_client + (i<extra?1:0);
+            i++;
+            if(logfilename){
+               fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, 0.5, current->threads);
+               //fflush(lf);
+            }
          }
       }
       UNLOCK_CLIENTS;
