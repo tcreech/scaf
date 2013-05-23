@@ -380,18 +380,18 @@ void maxspeedup_referee_body(void* data){
       }
 
       i=0;
+      double logentrytime = rtclock() - startuptime;
       HASH_ITER(hh, clients, current, tmp){
          if(remaining_rations!=0){
 
             float exact_ration = current->log_factor * proc_ipc;
-            int rounded_ration = roundf(exact_ration);
-            if(rounded_ration > current->threads){
+            if(exact_ration > current->threads){
                current->threads++;
                remaining_rations--;
             }
          }
          if(logfilename){
-            fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, current->metric, current->threads);
+            fprintf(lf, "%g, %d, %g, %d\n", logentrytime, current->pid, current->metric, current->threads);
             //fflush(lf);
          }
       }
