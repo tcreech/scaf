@@ -705,11 +705,11 @@ void* scaf_gomp_training_control(void *unused){
       __sol_proc_run_clearsigs(expPid);
 #endif //__sun
       usleep(100000);
-      __sol_proc_setsig(expPid, SIGALRM);
 #if defined(__linux__)
       waitpid(expPid, &status, 0);
 #endif //__linux__
 #if defined(__sun)
+      __sol_proc_setsig(expPid, SIGALRM);
       __sol_proc_stop_wait(expPid);
 #endif //__sun
 #if defined(__linux__)
