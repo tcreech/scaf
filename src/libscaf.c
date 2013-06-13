@@ -95,6 +95,7 @@ int omp_max_threads;
 int scaf_nullfd;
 int scaf_feedback_freq = 1;
 
+double scaf_init_rtclock;
 float scaf_section_duration;
 float scaf_section_ipc;
 float scaf_section_start_time;
@@ -197,6 +198,7 @@ int scaf_connect(void *scafd){
 
 void* scaf_init(void **context_p){
    scaf_mypid = getpid();
+   scaf_init_rtclock = rtclock();
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
    char *fbf = getenv("SCAF_FEEDBACK_FREQ");
    if(fbf)
@@ -327,13 +329,17 @@ int scaf_section_start(void* section){
    }
 #else
    {
-      scaf_section_start_time = 0.0;
+      scaf_section_start_time = (float)(rtclock() - scaf_init_rtclock);
+      scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
    }
 #endif
 
    scaf_section_ipc = 0.0;
+
+#if(HAVE_LIBPAPI)
    if(!current_section->training_complete && scafd_available)
       return current_threads-1;
+#endif
 
    return current_threads;
 }
@@ -355,8 +361,9 @@ void scaf_section_end(void){
    }
 #else
    {
-      scaf_section_ipc += 1.0;
-      scaf_section_duration = 1.0;
+      scaf_section_ipc += 0.5;
+      scaf_section_end_time = (float)(float)(rtclock() - scaf_init_rtclock);
+      scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
    }
 #endif
 

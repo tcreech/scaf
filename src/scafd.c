@@ -247,11 +247,11 @@ void print_clients(void){
    attron(A_BOLD);
    printw("scafd: Running, managing %d hardware contexts. ", max_threads);
 #if(HAVE_LIBPAPI)
-   printw("Runtime instrumentation supported.\n");
+   printw("Runtime experiments supported.\n");
 #else
    attroff(COLOR_PAIR(1));
    attron(COLOR_PAIR(2));
-   printw("WARNING: Runtime instrumentation NOT supported.\n");
+   printw("WARNING: Runtime experiments NOT supported.\n");
    attroff(COLOR_PAIR(2));
    attron(COLOR_PAIR(1));
 #endif
