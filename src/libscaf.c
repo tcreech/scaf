@@ -604,6 +604,7 @@ void* scaf_gomp_training_control(void *unused){
     // SunOS: we just issue a stop here and wait for the parent thread to run
     // us again with tracing enabled.
     ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+    kill(getpid(), SIGSTOP);
 #endif //__linux__
 #if defined(__sun)
     __sol_proc_force_stop_nowait(getpid());
