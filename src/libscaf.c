@@ -781,7 +781,7 @@ void* scaf_gomp_training_control(void *unused){
       // This is not one of the syscalls deemed ``safe''. (Its completion by
       // the kernel may affect the correctness of the program.) We must stop
       // the training fork now.
-      printf("Parent: child has behaved badly (section %p, syscall %d). Stopping it.\n", fn, syscall);
+      printf("Parent: child has behaved badly (section %p, syscall %d). Stopping it.\n", current_section_id, syscall);
 #if defined(__linux__)
       void *badCall = (void*)0xbadCa11;
       if (ptrace(PTRACE_POKEUSER, expPid, ORIG_ACCUM, badCall) < 0) {
