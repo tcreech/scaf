@@ -733,6 +733,7 @@ void* scaf_gomp_training_control(void *unused){
 
 #if defined(__linux__)
     int syscall = ptrace(PTRACE_PEEKUSER, expPid, ORIG_ACCUM, 0);
+    int foundUnsafeOpen = 0;
 #endif //__linux__
 
     assert(syscall >= 0);
@@ -771,9 +772,25 @@ void* scaf_gomp_training_control(void *unused){
       foundRaW = 1;
 
 #if defined(__linux__)
+    if(syscall == __NR_open){
+      //Some opens are safe, depending on the arguments.
+      char *file = ptrace(PTRACE_PEEKUSER, expPid, ARGREG, 0);
+      if(strcmp("/sys/devices/system/cpu/online", file)==0){
+         //This is ok because it's always a read-only file.
+      }else{
+         foundUnsafeOpen = 1;
+      }
+    }
+#endif //__linux__
+
+#if defined(__linux__)
     if((syscall != __NR_rt_sigprocmask && syscall != __NR_rt_sigaction &&
           syscall != __NR_read && syscall != __NR_nanosleep &&
-          syscall != __NR_write && syscall != __NR_restart_syscall) || foundRaW){
+          syscall != __NR_write && syscall != __NR_restart_syscall &&
+          syscall != __NR_mprotect && syscall != __NR_sched_getaffinity &&
+          syscall != __NR_sched_setaffinity && syscall != __NR_open &&
+          syscall != __NR_close
+        ) || foundRaW || foundUnsafeOpen){
 #endif //__linux__
 #if defined(__sun)
     if(( syscall != SYS_read && syscall != SYS_write )
