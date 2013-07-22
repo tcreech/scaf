@@ -349,7 +349,7 @@ int scaf_section_start(void* section){
    scaf_section_ipc = 0.0;
 
 #if(HAVE_LIBPAPI)
-   if(!current_section->training_complete && scafd_available)
+   if(!current_section->training_complete && scafd_available && !scaf_disable_training)
       return current_threads-1;
 #endif
 
