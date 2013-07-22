@@ -90,6 +90,7 @@ void *scafd_context;
 
 int scafd_available;
 int scaf_disable_training = 0;
+int scaf_experiment_process = 0;
 int scaf_mypid;
 int omp_max_threads;
 int scaf_nullfd;
@@ -186,6 +187,12 @@ int scaf_connect(void *scafd){
       int response = *((int*)(zmq_msg_data(&reply)));
       zmq_msg_close(&reply);
 
+      // Register scaf_retire() to be called upon exit. This just a courtesy
+      // effort to notify scafd; if your platform for some reason never calls
+      // this scafd will still figure out that you're gone on its own after a
+      // few seconds.
+      atexit(scaf_retire);
+
       return response;
    } else {
       // No response.
@@ -227,6 +234,11 @@ void* scaf_init(void **context_p){
 }
 
 void scaf_retire(void){
+   // If we're just an experiment (with the atexit called before the fork),
+   // then don't tell anyone anything.
+   if(scaf_experiment_process)
+      return;
+
    // send retire request
    zmq_msg_t request;
    zmq_msg_init_size(&request, sizeof(scaf_client_message));
@@ -592,6 +604,8 @@ void* scaf_gomp_training_control(void *unused){
   int expPid = fork();
   scaf_training_desc.training_pid = expPid;
   if(expPid==0){
+    // Note that we are an experiment process.
+    scaf_experiment_process = 1;
     // Put ourselves in the parent's process group.
     setpgid(0, scaf_mypid);
     // Start up our timing stuff with SCAF.
