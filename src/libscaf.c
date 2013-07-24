@@ -90,7 +90,7 @@ static void *scafd_context;
 
 static int scafd_available;
 static int scaf_disable_training = 0;
-static int scaf_disable_firsttouch = 0;
+static int scaf_enable_firsttouch = 0;
 static int scaf_experiment_process = 0;
 static int scaf_mypid;
 static int omp_max_threads;
@@ -136,7 +136,7 @@ static scaf_client_section inline *scaf_add_client_section(void *section_id){
    new_section->last_time = 0;
    new_section->last_ipc = 1;
    new_section->training_complete = 0;
-   new_section->first_touch_complete = !!scaf_disable_firsttouch;
+   new_section->first_touch_complete = !scaf_enable_firsttouch;
    new_section->training_serial_ipc = 0.5;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
@@ -221,11 +221,11 @@ static void* scaf_init(void **context_p){
    else
      scaf_disable_training = 0;
 
-   char *nofirsttouch = getenv("SCAF_DISABLE_FIRSTTOUCH");
-   if(nofirsttouch)
-     scaf_disable_firsttouch = atoi(nofirsttouch);
+   char *firsttouch = getenv("SCAF_ENABLE_FIRSTTOUCH");
+   if(firsttouch)
+     scaf_enable_firsttouch = atoi(firsttouch);
    else
-     scaf_disable_firsttouch = 0;
+     scaf_enable_firsttouch = 0;
 
    void *context = zmq_init(1);
    *context_p = context;
