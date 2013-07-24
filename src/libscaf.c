@@ -79,37 +79,37 @@
 //#define PAPI_HL_MEASURE PAPI_flips
 #define PAPI_HL_MEASURE PAPI_ipc
 
-void* scaf_gomp_training_control(void *unused);
-scaf_client_training_description scaf_training_desc;
+static void* scaf_gomp_training_control(void *unused);
+static scaf_client_training_description scaf_training_desc;
 static inline void scaf_training_start(void);
 static inline void scaf_training_end(int);
 
-int did_scaf_startup;
-void *scafd;
-void *scafd_context;
+static int did_scaf_startup;
+static void *scafd;
+static void *scafd_context;
 
-int scafd_available;
-int scaf_disable_training = 0;
-int scaf_experiment_process = 0;
-int scaf_mypid;
-int omp_max_threads;
-int scaf_nullfd;
-int scaf_feedback_freq = 1;
+static int scafd_available;
+static int scaf_disable_training = 0;
+static int scaf_disable_firsttouch = 0;
+static int scaf_experiment_process = 0;
+static int scaf_mypid;
+static int omp_max_threads;
+static int scaf_nullfd;
+static int scaf_feedback_freq = 1;
 
-double scaf_init_rtclock;
-float scaf_section_duration;
-float scaf_section_ipc;
-float scaf_section_start_time;
-float scaf_section_end_time;
-float scaf_serial_duration;
-float scaf_section_efficiency;
-static pthread_mutex_t scaf_section_ipc_lock = PTHREAD_MUTEX_INITIALIZER;
+static double scaf_init_rtclock;
+static float scaf_section_duration;
+static float scaf_section_ipc;
+static float scaf_section_start_time;
+static float scaf_section_end_time;
+static float scaf_serial_duration;
+static float scaf_section_efficiency;
 static pthread_t scaf_master_thread;
 
-void* current_section_id;
-int current_threads;
-scaf_client_section *current_section = NULL;
-scaf_client_section *sections = NULL;
+static void* current_section_id;
+static int current_threads;
+static scaf_client_section *current_section = NULL;
+static scaf_client_section *sections = NULL;
 
 // Discrete IIR, single-pole lowpass filter.
 // Time constant rc is expected to be the same across calls. Inputs x and dt
@@ -125,29 +125,30 @@ float lowpass(float x, float dt, float rc){
    return yp;
 }
 
-void* scaf_init(void **context_p);
-int scaf_connect(void *scafd);
-scaf_client_section*  scaf_add_client_section(void *section_id);
-scaf_client_section* scaf_find_client_section(void *section_id);
+static void* scaf_init(void **context_p);
+static int scaf_connect(void *scafd);
+static scaf_client_section*  scaf_add_client_section(void *section_id);
+static scaf_client_section* scaf_find_client_section(void *section_id);
 
-scaf_client_section inline *scaf_add_client_section(void *section_id){
+static scaf_client_section inline *scaf_add_client_section(void *section_id){
    scaf_client_section *new_section = malloc(sizeof(scaf_client_section));
    new_section->section_id = section_id;
    new_section->last_time = 0;
    new_section->last_ipc = 1;
    new_section->training_complete = 0;
+   new_section->first_touch_complete = !!scaf_disable_firsttouch;
    new_section->training_serial_ipc = 0.5;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
 }
 
-scaf_client_section inline *scaf_find_client_section(void *section_id){
+static scaf_client_section inline *scaf_find_client_section(void *section_id){
    scaf_client_section *found = NULL;
    HASH_FIND_PTR(sections, &section_id, found);
    return found;
 }
 
-int scaf_connect(void *scafd){
+static int scaf_connect(void *scafd){
    scafd_available = 1;
    zmq_pollitem_t pi;
    pi.socket = scafd;
@@ -203,7 +204,8 @@ int scaf_connect(void *scafd){
    }
 }
 
-void* scaf_init(void **context_p){
+
+static void* scaf_init(void **context_p){
    scaf_mypid = getpid();
    scaf_init_rtclock = rtclock();
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
@@ -218,6 +220,12 @@ void* scaf_init(void **context_p){
      scaf_disable_training = atoi(notrain);
    else
      scaf_disable_training = 0;
+
+   char *nofirsttouch = getenv("SCAF_DISABLE_FIRSTTOUCH");
+   if(nofirsttouch)
+     scaf_disable_firsttouch = atoi(nofirsttouch);
+   else
+     scaf_disable_firsttouch = 0;
 
    void *context = zmq_init(1);
    *context_p = context;
@@ -349,7 +357,7 @@ int scaf_section_start(void* section){
    scaf_section_ipc = 0.0;
 
 #if(HAVE_LIBPAPI)
-   if(!current_section->training_complete && scafd_available && !scaf_disable_training)
+   if(!current_section->training_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_training)
       return current_threads-1;
 #endif
 
@@ -411,7 +419,7 @@ void scaf_section_end(void){
    return;
 }
 
-inline void scaf_training_start(void){
+static inline void scaf_training_start(void){
 
 #if(HAVE_LIBPAPI)
    {
@@ -442,7 +450,7 @@ inline void scaf_training_start(void){
       alarm(SCAF_TRAINING_TIME_LIMIT_SECONDS);
 }
 
-inline void scaf_training_end(int sig){
+static inline void scaf_training_end(int sig){
 
    syscall(__NR_scaf_training_done);
 
@@ -525,6 +533,9 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
    }
 #endif
 
+   if(!current_section->first_touch_complete)
+      return 0;
+
    scaf_training_desc.fn = fn;
    scaf_training_desc.data = data;
    pthread_barrier_init(&(scaf_training_desc.control_pthread_b), NULL, 2);
@@ -543,6 +554,11 @@ void scaf_gomp_training_destroy(void){
       return;
    }
 #endif
+
+   if(!current_section->first_touch_complete){
+      current_section->first_touch_complete = 1;
+      return;
+   }
 
 #if(! SCAF_PARALLEL_WAIT_FOR_TRAINING)
    {
@@ -585,7 +601,7 @@ void scaf_gomp_training_destroy(void){
    //printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
 }
 
-void* scaf_gomp_training_control(void *unused){
+static void* scaf_gomp_training_control(void *unused){
    void (*fn) (void*) = scaf_training_desc.fn;
    void *data = scaf_training_desc.data;
 

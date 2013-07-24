@@ -59,6 +59,7 @@ typedef struct {
    float last_time;
    float last_ipc;
    int training_complete;
+   int first_touch_complete;
    int training_threads;
    float training_serial_ipc;
    float training_parallel_ipc;
