@@ -61,9 +61,6 @@
 // The maximum amount of time that a training fork will run for.
 #define SCAF_TRAINING_TIME_LIMIT_SECONDS 10
 
-// Disable training
-#define SCAF_ENABLE_TRAINING 1
-
 // Limit measured efficiency to this value. This can restrict the effects of
 // timing glitches resulting in crazy values.
 #define SCAF_MEASURED_EFF_LIMIT 2.0
@@ -527,7 +524,7 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
    if(scaf_disable_training || !scafd_available || current_section->training_complete || !(current_threads>1))
       return 0;
 
-#if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
+#if(! HAVE_LIBPAPI)
    {
       return 0;
    }
@@ -549,7 +546,7 @@ void scaf_gomp_training_destroy(void){
    if(scaf_disable_training || !scafd_available || current_section->training_complete || !(current_threads>1))
       return;
 
-#if(! HAVE_LIBPAPI || ! SCAF_ENABLE_TRAINING)
+#if(! HAVE_LIBPAPI)
    {
       return;
    }
