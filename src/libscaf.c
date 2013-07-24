@@ -787,7 +787,7 @@ void* scaf_gomp_training_control(void *unused){
 #if defined(__linux__)
     if(syscall == __NR_open){
       //Some opens are safe, depending on the arguments.
-      char *file = ptrace(PTRACE_PEEKUSER, expPid, ARGREG, 0);
+      char *file = (char*)ptrace(PTRACE_PEEKUSER, expPid, ARGREG, 0);
       if(strcmp("/sys/devices/system/cpu/online", file)==0){
          //This is ok because it's always a read-only file.
       }else{
