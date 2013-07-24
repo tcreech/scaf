@@ -538,6 +538,7 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
    pthread_barrier_init(&(scaf_training_desc.control_pthread_b), NULL, 2);
    pthread_create(&(scaf_training_desc.control_pthread), NULL, &scaf_gomp_training_control, NULL);
    pthread_barrier_wait(&(scaf_training_desc.control_pthread_b));
+   pthread_barrier_destroy(&(scaf_training_desc.control_pthread_b));
    return 1;
 }
 
