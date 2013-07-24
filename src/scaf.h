@@ -37,8 +37,6 @@ static inline double rtclock(){
    return (Tp.tv_sec + Tp.tv_usec * 1.0e-6);
 }
 
-extern int scaf_nullfd;
-
 enum scaf_message_purpose {
    SCAF_NEW_CLIENT,
    SCAF_FORMER_CLIENT,
