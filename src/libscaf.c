@@ -26,17 +26,25 @@
 #if defined(__linux__)
 #include <sys/ptrace.h>
 #include <linux/ptrace.h>
+#include <sys/mman.h>
 
 #if defined(__i386__)
 #define ORIG_ACCUM	(4 * ORIG_EAX)
 #define ARGREG	(4 * EBX)
+#define ARG2REG	(4 * ECX)
+#define ARG3REG	(4 * EDX)
 #elif defined(__x86_64__)
 #define ORIG_ACCUM	(8 * ORIG_RAX)
 #define ARGREG	(8 * RDI)
+#define ARG2REG	(8 * RSI)
+#define ARG3REG	(8 * RDX)
 #elif defined(__tilegx__)
 // This is for TileGx, which is 64-bit. Guessing this stuff mostly.
 #define ORIG_ACCUM   (8 * TREG_SYSCALL_NR)
 #define ARGREG      (8 * 0)
+//TODO: These two are just guesses. Verify.
+#define ARG2REG      (8 * 1)
+#define ARG3REG      (8 * 2)
 #else
 #error unsupported architecture
 #endif
@@ -262,7 +270,6 @@ void scaf_retire(void){
 }
 
 int scaf_section_start(void* section){
-   //printf("Starting section %p.\n", section);
    static int rate_limit_counter = 0;
    int skip_this_communication = 0;
 
@@ -799,11 +806,23 @@ static void* scaf_gomp_training_control(void *unused){
       foundRaW = 1;
 
 #if defined(__linux__)
+    //Some opens/mmaps are safe, depending on the arguments.
     if(syscall == __NR_open){
-      //Some opens are safe, depending on the arguments.
       char *file = (char*)ptrace(PTRACE_PEEKUSER, expPid, ARGREG, 0);
       if(strcmp("/sys/devices/system/cpu/online", file)==0){
          //This is ok because it's always a read-only file.
+      }else if(strcmp("/proc/stat", file)==0){
+         //This is ok because it's always a read-only file.
+      }else{
+         //printf("Unsafe open: %s\n", file);
+         foundUnsafeOpen = 1;
+      }
+    }else if(syscall == __NR_mmap){
+      int prot = (int)ptrace(PTRACE_PEEKUSER, expPid, ARG3REG, 0);
+      if(prot & MAP_PRIVATE){
+         //This is ok because changes won't go back to disk.
+      }else if(prot & MAP_ANONYMOUS){
+         //This is ok because there is no associated file.
       }else{
          foundUnsafeOpen = 1;
       }
@@ -816,7 +835,7 @@ static void* scaf_gomp_training_control(void *unused){
           syscall != __NR_write && syscall != __NR_restart_syscall &&
           syscall != __NR_mprotect && syscall != __NR_sched_getaffinity &&
           syscall != __NR_sched_setaffinity && syscall != __NR_open &&
-          syscall != __NR_close
+          syscall != __NR_close && syscall != __NR_mmap
         ) || foundRaW || foundUnsafeOpen){
 #endif //__linux__
 #if defined(__sun)
