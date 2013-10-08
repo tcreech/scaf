@@ -44,7 +44,6 @@ static int nobgload = 0;
 static int equipartitioning = 0;
 static int curses_interface = 0;
 static int text_interface = 0;
-static char *logfilename = NULL;
 
 static scaf_client *clients = NULL;
 
@@ -53,7 +52,6 @@ static float bg_utilization;
 
 static pthread_rwlock_t clients_lock;
 
-static FILE *lf;
 static double startuptime;
 
 int get_scaf_controlled_pids(int** pid_list){
@@ -390,10 +388,6 @@ void maxspeedup_referee_body(void* data){
                remaining_rations--;
             }
          }
-         if(logfilename){
-            fprintf(lf, "%g, %d, %g, %d\n", logentrytime, current->pid, current->metric, current->threads);
-            //fflush(lf);
-         }
       }
       UNLOCK_CLIENTS;
 
@@ -421,10 +415,6 @@ void equi_referee_body(void* data){
          HASH_ITER(hh, clients, current, tmp){
             current->threads = per_client + (i<extra?1:0);
             i++;
-            if(logfilename){
-               fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, 0.5, current->threads);
-               //fflush(lf);
-            }
          }
       }
       UNLOCK_CLIENTS;
@@ -505,7 +495,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqbl:")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqb")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -525,12 +515,9 @@ int main(int argc, char **argv){
           case 'b':
              nobgload = 1;
              break;
-          case 'l':
-             logfilename = optarg;;
-             break;
           case 'h':
           default:
-             printf("Usage: %s [-h] [-q] [-e] [-b] [-l logfile] [-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n\t-l logfile\tlog allocations and efficiencies to logfile\n\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0]);
+             printf("Usage: %s [-h] [-q] [-e] [-b] [-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0]);
              exit(1);
              break;
        }
@@ -538,8 +525,6 @@ int main(int argc, char **argv){
 
     max_threads = omp_get_max_threads();
     bg_utilization = proc_get_cpus_used();
-    if(logfilename)
-       lf = fopen(logfilename, "w");
     startuptime = rtclock();
 
     void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
