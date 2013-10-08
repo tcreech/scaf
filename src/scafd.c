@@ -31,8 +31,6 @@ int omp_get_max_threads();
 
 #define MAX_CLIENTS 8
 
-#define CURSES_INTERFACE 1
-
 #define REFEREE_PERIOD_US (250000)
 
 #define RD_LOCK_CLIENTS pthread_rwlock_rdlock(&clients_lock)
@@ -42,10 +40,10 @@ int omp_get_max_threads();
 #define MAX(a,b) ((a > b) ? a : b)
 #define MIN(a,b) ((a < b) ? a : b)
 
-static int quiet = 0;
 static int nobgload = 0;
 static int equipartitioning = 0;
-static int cheating = 0;
+static int curses_interface = 0;
+static int text_interface = 0;
 static char *logfilename = NULL;
 
 static scaf_client *clients = NULL;
@@ -235,7 +233,17 @@ void delete_client(scaf_client *c){
    HASH_DEL(clients, c);
 }
 
-void print_clients(void){
+void text_print_clients(void){
+   printf("%-06s%-09s%-08s%-09s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "EFFICIENCY");
+   printf("%-06s%-09s%-08d%-09s%-10s\n", "all", "-", max_threads, "-", "-");
+   scaf_client *current, *tmp;
+   HASH_ITER(hh, clients, current, tmp){
+      printf("%-06d%-09s%-08d%-09p%-10f\n", current->pid, current->name, current->threads, current->current_section, current->metric);
+   }
+   printf("\n");
+}
+
+void curses_print_clients(void){
    move(0,0); clrtobot();
    int i;
    int max = HASH_COUNT(clients);
@@ -323,18 +331,10 @@ int perform_client_request(scaf_client_message *client_message){
       scaf_client *client = find_client(client_pid);
       assert(client);
       client->current_section = client_message->section;
-      if(!cheating)
-         client->metric = client_metric;
+      client->metric = client_metric;
       client_threads = client->threads;
       UNLOCK_CLIENTS;
       return client_threads;
-   }
-   else if(client_request == SCAF_SECTION_END){
-      RW_LOCK_CLIENTS;
-      scaf_client *client = find_client(client_pid);
-      //client->metric = client_metric;
-      UNLOCK_CLIENTS;
-      return 0;
    }
    else if(client_request == SCAF_FORMER_CLIENT){
       RW_LOCK_CLIENTS;
@@ -443,124 +443,26 @@ float lowpass(float x, float dt, float rc){
    return yp;
 }
 
-// This is a special mode for the PLDI 2012 experiment. Assume that two
-// programs are running, and that the one named "bt.B.x" is the "bad" one
-// resulting from AESOP parallelization. Populate the efficency information
-// here, based on our testing on bhindi.ece.umd.edu. (The efficiency does not
-// vary much at all through program phases in these cases.)
-void cheating_referee_body(void* data){
+void text_scoreboard_body(void* data){
    while(1){
-      RW_LOCK_CLIENTS;
-      scaf_client *current, *tmp;
-
-      float metric_sum = 0.0;
-      int num_clients = HASH_COUNT(clients);
-
-      int i=0;
-      HASH_ITER(hh, clients, current, tmp){
-         if(strcmp(current->name, "bt.B.x")==0){
-            // we know that this silly program only speeds up to 1.12966 on 2+ threads.
-            current->metric = 1.12966 / current->threads;
-            if(current->threads==1)
-               current->metric = 1;
-         }else if(strcmp(current->name, "ua.C.x")==0){
-            // Did some testing ahead of time to gather these efficiency
-            // ratings. Note that the speedup is actually better than linear
-            // for some time, which is good but has no special meaning for
-            // SCAF.
-            switch(current->threads){
-               case 1:
-                  current->metric = 1; break;
-               case 2:
-                  current->metric = 0.96; break;
-               case 3:
-                  current->metric = 0.96; break;
-               case 4:
-                  current->metric = 0.96; break;
-               case 5:
-                  current->metric = 0.74; break;
-               case 6:
-                  current->metric = 0.78; break;
-               case 7:
-                  current->metric = 0.72; break;
-               case 8:
-                  current->metric = 0.83; break;
-               case 9:
-                  current->metric = 0.67; break;
-               case 10:
-                  current->metric = 0.57; break;
-               case 11:
-                  current->metric = 0.57; break;
-               case 12:
-                  current->metric = 0.60; break;
-               case 13:
-                  current->metric = 0.59; break;
-               case 14:
-                  current->metric = 0.51; break;
-               case 15:
-                  current->metric = 0.48; break;
-               case 16:
-                  current->metric = 0.46; break;
-               default:
-                  assert(0 && "how did this happen??");
-            }
-            current->metric = lowpass(current->metric, 0.25, 2.0);
-         }
-
-         current->log_factor = MAX((current->metric * current->threads - 1.0),1.0)/log(current->threads);
-         metric_sum += current->log_factor;
-         i++;
-      }
-
-      int available_threads = max_threads - ceil(bg_utilization - 0.5);
-      int remaining_rations = MAX(available_threads, 1);
-      float proc_ipc = ((float)(remaining_rations)) / metric_sum;
-
-      i=0;
-      HASH_ITER(hh, clients, current, tmp){
-         float exact_ration = current->log_factor * proc_ipc;
-         int min_ration = floor(exact_ration);
-         current->threads = min_ration==0?1:min_ration;
-         remaining_rations -= current->threads;
-         i++;
-      }
-
-      i=0;
-      HASH_ITER(hh, clients, current, tmp){
-         if(remaining_rations!=0){
-
-            float exact_ration = current->log_factor * proc_ipc;
-            int rounded_ration = roundf(exact_ration);
-            if(rounded_ration > current->threads){
-               current->threads++;
-               remaining_rations--;
-            }
-         }
-         if(logfilename){
-            fprintf(lf, "%g, %d, %g, %d\n", rtclock()-startuptime, current->pid, current->metric, current->threads);
-            //fflush(lf);
-         }
-      }
+      RD_LOCK_CLIENTS;
+      text_print_clients();
       UNLOCK_CLIENTS;
-
-      usleep(REFEREE_PERIOD_US);
+      sleep(text_interface);
    }
 }
 
-void scoreboard_body(void* data){
-#if CURSES_INTERFACE
+void curses_scoreboard_body(void* data){
    WINDOW *wnd;
    wnd = initscr();
    noecho();
    clear();
    refresh();
-#endif
+
    while(1){
-#if CURSES_INTERFACE
       RD_LOCK_CLIENTS;
-      print_clients();
+      curses_print_clients();
       UNLOCK_CLIENTS;
-#endif
       usleep(250000);
    }
 }
@@ -603,16 +505,22 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "cheqbl:")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqbl:")) != -1){
        switch(c){
           case 'q':
-             quiet = 1;
+             curses_interface = 0;
+             text_interface = 0;
              break;
           case 'e':
              equipartitioning = 1;
              break;
           case 'c':
-             cheating = 1;
+             curses_interface = 1;
+             text_interface = 0;
+             break;
+          case 't':
+             text_interface = atoi(optarg);
+             curses_interface = 0;
              break;
           case 'b':
              nobgload = 1;
@@ -622,7 +530,7 @@ int main(int argc, char **argv){
              break;
           case 'h':
           default:
-             printf("Usage: %s [-h] [-q] [-e] [-b] [-l logfile] [-c]\n\t-h\tdisplay this message\n\t-q\tbe quieter or something\n\t-b\tdon't monitor background load\n\t-l logfile\tlog allocations and efficiencies to logfile\n\t-e\tonly do strict equipartitioning\n\t-c\tuse hardcoded profiling info for pldi2013 experiment\n", argv[0]);
+             printf("Usage: %s [-h] [-q] [-e] [-b] [-l logfile] [-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n\t-l logfile\tlog allocations and efficiencies to logfile\n\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0]);
              exit(1);
              break;
        }
@@ -635,11 +543,13 @@ int main(int argc, char **argv){
     startuptime = rtclock();
 
     void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
-    referee_body = cheating?&cheating_referee_body:referee_body;
 
     pthread_t referee, reaper, scoreboard, lookout;
     pthread_rwlock_init(&clients_lock, NULL);
-    pthread_create(&scoreboard, NULL, (void *(*)(void*))&scoreboard_body, NULL);
+    if(curses_interface)
+       pthread_create(&scoreboard, NULL, (void *(*)(void*))&curses_scoreboard_body, NULL);
+    else if(text_interface)
+       pthread_create(&scoreboard, NULL, (void *(*)(void*))&text_scoreboard_body, NULL);
     pthread_create(&referee, NULL, (void *(*)(void*))referee_body, NULL);
     pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
     pthread_create(&lookout, NULL, (void *(*)(void*))&lookout_body, NULL);
@@ -668,7 +578,7 @@ int main(int argc, char **argv){
         scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
         // Update client bookkeeping if necessary
         int threads = perform_client_request(client_message);
-        assert(threads > 0 || client_message->message == SCAF_FORMER_CLIENT || client_message->message == SCAF_SECTION_END);
+        assert(threads > 0 || client_message->message == SCAF_FORMER_CLIENT);
         assert(threads < 4096);
         zmq_msg_close (&request);
 

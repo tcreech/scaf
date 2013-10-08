@@ -41,7 +41,6 @@ enum scaf_message_purpose {
    SCAF_NEW_CLIENT,
    SCAF_FORMER_CLIENT,
    SCAF_SECTION_START,
-   SCAF_SECTION_END
 };
 
 typedef struct {

@@ -395,31 +395,6 @@ void scaf_section_end(void){
    current_section->last_ipc  = scaf_section_ipc;
    scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->training_serial_ipc);
 
-#if 0 // We don't do anything at all with "SECTION_END" messages.
-   zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(scaf_client_message));
-   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
-   scaf_message->message = SCAF_SECTION_END;
-   scaf_message->pid = scaf_mypid;
-   scaf_message->section = current_section_id;
-#if ZMQ_VERSION_MAJOR > 2
-   zmq_sendmsg(scafd, &request, 0);
-#else
-   zmq_send(scafd, &request, 0);
-#endif
-   zmq_msg_close(&request);
-
-   zmq_msg_t reply;
-   zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
-      zmq_recvmsg(scafd, &reply, 0);
-#else
-      zmq_recv(scafd, &reply, 0);
-#endif
-   int response = *((int*)(zmq_msg_data(&reply)));
-   zmq_msg_close(&reply);
-#endif
-
    return;
 }
 
