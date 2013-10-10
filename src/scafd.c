@@ -232,11 +232,11 @@ void delete_client(scaf_client *c){
 }
 
 void text_print_clients(void){
-   printf("%-06s%-09s%-08s%-09s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "EFFICIENCY");
-   printf("%-06s%-09s%-08d%-09s%-10s\n", "all", "-", max_threads, "-", "-");
+   printf("%-6s%-9s%-8s%-9s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "EFFICIENCY");
+   printf("%-6s%-9s%-8d%-9s%-10s\n", "all", "-", max_threads, "-", "-");
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      printf("%-06d%-09s%-08d%-09p%-10f\n", current->pid, current->name, current->threads, current->current_section, current->metric);
+      printf("%-6d%-9s%-8d%-9p%-10f\n", current->pid, current->name, current->threads, current->current_section, current->metric);
    }
    printf("\n");
    fflush(stdout);
