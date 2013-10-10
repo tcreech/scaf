@@ -239,6 +239,7 @@ void text_print_clients(void){
       printf("%-06d%-09s%-08d%-09p%-10f\n", current->pid, current->name, current->threads, current->current_section, current->metric);
    }
    printf("\n");
+   fflush(stdout);
 }
 
 void curses_print_clients(void){
