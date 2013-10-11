@@ -33,6 +33,8 @@ int omp_get_max_threads();
 
 #define REFEREE_PERIOD_US (250000)
 
+#define SERIAL_LOG_FACTOR (1.0)
+
 #define RD_LOCK_CLIENTS pthread_rwlock_rdlock(&clients_lock)
 #define RW_LOCK_CLIENTS pthread_rwlock_wrlock(&clients_lock)
 #define UNLOCK_CLIENTS pthread_rwlock_unlock(&clients_lock)
@@ -360,7 +362,11 @@ void maxspeedup_referee_body(void* data){
 
       int i=0;
       HASH_ITER(hh, clients, current, tmp){
-         current->log_factor = MAX((current->metric * current->threads - 1.0),1.0)/log(current->threads);
+         if(current->threads > 1)
+            current->log_factor = MAX((current->metric * current->threads - 1.0),1.0)/log(current->threads);
+         else
+            current->log_factor = SERIAL_LOG_FACTOR;
+
          metric_sum += current->log_factor;
          i++;
       }
