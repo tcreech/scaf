@@ -185,7 +185,7 @@ inline void __sol_proc_trace_syscalls(const pid_t pid){
    prdelset(&ctl.arg.syscalls, SYS_nanosleep);
    prdelset(&ctl.arg.syscalls, SYS_lwp_sigmask);
    prdelset(&ctl.arg.syscalls, SYS_close);
-   prdelset(&ctl.arg.syscalls, SYS_fstat64);
+   //prdelset(&ctl.arg.syscalls, SYS_fstat64);
    prdelset(&ctl.arg.syscalls, SYS_schedctl);
    prdelset(&ctl.arg.syscalls, SYS_ioctl);
    prdelset(&ctl.arg.syscalls, SYS_brk);
