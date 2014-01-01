@@ -724,6 +724,7 @@ static void* scaf_gomp_training_control(void *unused){
 #endif //__sun
       usleep(100000);
 #if defined(__linux__)
+      kill(expPid, SIGALRM);
       waitpid(expPid, &status, 0);
 #endif //__linux__
 #if defined(__sun)
