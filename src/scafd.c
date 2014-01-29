@@ -19,11 +19,21 @@
 #include "scaf.h"
 #include "uthash.h"
 
+#ifndef __KNC__
 #ifndef __clang__
 #include <omp.h>
 #else
 int omp_get_max_threads();
 #endif
+#else  //__KNC__
+int omp_get_max_threads(void){
+   char *maxenv = getenv("OMP_NUM_THREADS");
+   if(maxenv)
+      return atoi(maxenv);
+   else
+      return 240;
+}
+#endif //__KNC__
 
 #if defined(__sun)
 #include "solaris_trace_utils.h"
@@ -151,7 +161,10 @@ float proc_get_cpus_used(void){
                   //used_stime[z] += stat.stime;
                }
             } else {
+               // TODO: This happens a lot on the MIC. Why?
+#ifndef __KNC__
                printf("WARNING: failed to parse /proc/%d/stat !\n", procdir_pid);
+#endif
             }
          }
       }
