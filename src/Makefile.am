@@ -1,12 +1,7 @@
-bin_PROGRAMS = scafd scafc
+bin_PROGRAMS = scafd
 scafd_SOURCES = scafd.c scaf.h uthash.h
-scafd_LDADD = -lm -lgomp -lpthread -lcurses
+scafd_LDADD = -lm -lpthread -lcurses
 scafd_CFLAGS =
-
-scafc_SOURCES = scafc.c scaf.h libscaf.c uthash.h
-scafc_LDADD = -lm
-scafc_LDFLAGS = -fopenmp -lgomp
-scafc_CFLAGS = -fopenmp
 
 AUTOMAKE_OPTIONS = gnu
 lib_LTLIBRARIES = libscaf.la
