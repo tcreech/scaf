@@ -474,7 +474,7 @@ static inline void scaf_training_end(int sig){
    }
 #endif
 
-   //printf(BLUE "SCAF training (%p) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, scaf_section_duration, scaf_section_ipc);
+   //printf(BLUE "SCAF training (%p, pid %d) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, getpid(), scaf_section_duration, scaf_section_ipc);
 
    void *context = zmq_init(1);
    scafd = zmq_socket (context, ZMQ_REQ);
@@ -825,7 +825,7 @@ static void* scaf_gomp_training_control(void *unused){
       // This is not one of the syscalls deemed ``safe''. (Its completion by
       // the kernel may affect the correctness of the program.) We must stop
       // the training fork now.
-      printf("Parent: child has behaved badly (section %p, syscall %d). Stopping it.\n", current_section_id, syscall);
+      printf("Parent: child (%d) has behaved badly (section %p, syscall %d). Stopping it. (parent=%d)\n", expPid, current_section_id, syscall, getpid());
 #if defined(__linux__)
       void *badCall = (void*)0xbadCa11;
       if (ptrace(PTRACE_POKEUSER, expPid, ORIG_ACCUM, badCall) < 0) {
