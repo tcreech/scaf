@@ -62,6 +62,8 @@ static scaf_client *clients = NULL;
 static int max_threads;
 static float bg_utilization;
 
+static int stop_referee = 0;
+pthread_t referee, reaper, scoreboard, lookout;
 static pthread_rwlock_t clients_lock;
 
 static double startuptime;
@@ -326,7 +328,7 @@ int perform_client_request(scaf_client_message *client_message){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
-   float client_metric = equipartitioning ? 0.5 : client_message->efficiency;
+   float client_metric = client_message->efficiency;
 
    if(client_metric == 0.0)
       client_metric += 0.1;
@@ -366,7 +368,7 @@ int perform_client_request(scaf_client_message *client_message){
 }
 
 void maxspeedup_referee_body(void* data){
-   while(1){
+   while(!stop_referee){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
 
@@ -416,7 +418,7 @@ void maxspeedup_referee_body(void* data){
 }
 
 void equi_referee_body(void* data){
-   while(1){
+   while(!stop_referee){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
 
@@ -441,6 +443,20 @@ void equi_referee_body(void* data){
 
       usleep(REFEREE_PERIOD_US);
    }
+}
+
+void referee_switch_handler(int sig){
+
+   void (*new_referee_body)(void *) = sig==SIGUSR1?&equi_referee_body:&maxspeedup_referee_body;
+   if(text_interface)
+      printf("Switching to %s referee!\n", sig==SIGUSR1?"equipartitioning":"maxspeedup");
+
+   stop_referee = 1;
+   pthread_join(referee, NULL);
+   stop_referee = 0;
+   pthread_create(&referee, NULL, (void *(*)(void*))new_referee_body, NULL);
+
+   signal(sig, referee_switch_handler);
 }
 
 // Discrete IIR, single-pole lowpass filter. Used in scafd only by the referee
@@ -549,7 +565,6 @@ int main(int argc, char **argv){
 
     void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
 
-    pthread_t referee, reaper, scoreboard, lookout;
     pthread_rwlock_init(&clients_lock, NULL);
     if(curses_interface)
        pthread_create(&scoreboard, NULL, (void *(*)(void*))&curses_scoreboard_body, NULL);
@@ -558,6 +573,9 @@ int main(int argc, char **argv){
     pthread_create(&referee, NULL, (void *(*)(void*))referee_body, NULL);
     pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
     pthread_create(&lookout, NULL, (void *(*)(void*))&lookout_body, NULL);
+
+    signal(SIGUSR1, referee_switch_handler);
+    signal(SIGUSR2, referee_switch_handler);
 
     void *context = zmq_init (1);
     int num_clients = 0;
