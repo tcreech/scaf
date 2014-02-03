@@ -9,7 +9,9 @@
 #include <fcntl.h>
 #include <time.h>
 #include <zmq.h>
+#if !defined(__KNC__)
 #include <omp.h>
+#endif //!defined(__KNC__)
 #include "scaf.h"
 #if(HAVE_LIBPAPI)
 #include <papi.h>
@@ -75,6 +77,8 @@
 
 #if defined(__sun)
 #define SCAF_LOWPASS_TIME_CONSTANT (15.0)
+#elif defined(__KNC__)
+#define SCAF_LOWPASS_TIME_CONSTANT (30.0)
 #else //__sun
 #define SCAF_LOWPASS_TIME_CONSTANT (2.0)
 #endif //__sun
