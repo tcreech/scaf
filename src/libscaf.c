@@ -502,7 +502,7 @@ static inline void scaf_training_end(int sig){
    zmq_msg_close(&reply);
 
    zmq_close(scafd);
-   exit(0);
+   _Exit(0);
 }
 
 int scaf_gomp_training_create(void (*fn) (void*), void *data){
@@ -632,7 +632,7 @@ static void* scaf_gomp_training_control(void *unused){
     // When finished, send ourselves SIGINT to end the training.
     scaf_training_end(0);
     // If we get this far, just quit.
-    exit(0);
+    _Exit(0);
   }
 
   // Restore signal handling.
