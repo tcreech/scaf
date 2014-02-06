@@ -705,6 +705,7 @@ static void* scaf_gomp_training_control(void *unused){
       ptrace(PTRACE_KILL, expPid, NULL, NULL);
       abort();
     }
+    int signal = WIFSTOPPED(status)? WSTOPSIG(status) : -1;
 
     if(!WIFSTOPPED(status) ||
         !WSTOPSIG(status)==SIGTRAP){
@@ -754,6 +755,15 @@ static void* scaf_gomp_training_control(void *unused){
     int foundUnsafeOpen = 0;
 #endif //__linux__
 
+    if(syscall < 0 && signal == SIGSEGV){
+      printf(BOLDRED "WARNING: experiment %d hit SIGSEGV." RESET "\n", expPid);
+      // The experiment has segfaulted, so we'll have to just stop here.
+      // Deliver a SIGINT, continue the experiment, and detach. The experiment
+      // process will return from the bogus/noop syscall and go straight into
+      // the SIGINT signal handler.
+      ptrace(PTRACE_DETACH, expPid, NULL, SIGINT);
+      break;
+    }
     assert(syscall >= 0);
     if(syscall == __NR_scaf_training_done){
       //printf(RED "Parent: this is a bogus syscall that indicates the training ender is in control. We'll stop tracing.\n" RESET);
