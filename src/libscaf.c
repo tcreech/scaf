@@ -366,7 +366,11 @@ int scaf_section_start(void* section){
 
 #if(HAVE_LIBPAPI)
    if(!current_section->training_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_training)
+#if defined(__KNC__)
+      return current_threads-4;
+#else
       return current_threads-1;
+#endif //defined(__KNC__)
 #endif
 
    return current_threads;

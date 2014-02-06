@@ -404,7 +404,13 @@ void maxspeedup_referee_body(void* data){
                remaining_rations--;
             }
          }
+#if defined(__KNC__)
+         unsigned mod = current->threads % 4;
+         current->threads -= mod;
+         remaining_rations += mod;
+#endif
       }
+
       UNLOCK_CLIENTS;
 
       usleep(REFEREE_PERIOD_US);
