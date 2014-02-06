@@ -47,6 +47,7 @@ typedef struct {
    int pid;
    int threads;
    void* current_section;
+   unsigned checkins;
    float metric;
    float log_factor;
    char name[SCAF_MAX_CLIENT_NAME_LEN+1];
@@ -72,7 +73,6 @@ typedef struct {
    enum scaf_message_purpose message;
    void* section;
    float efficiency;
-   float total_efficiency;
 } scaf_client_message;
 
 typedef struct {

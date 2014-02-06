@@ -240,6 +240,7 @@ void add_client(int client_pid, int threads, void* client_section){
    c->threads = threads;
    c->current_section = client_section;
    c->metric = 1.0;
+   c->checkins = 1;
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
@@ -249,11 +250,11 @@ void delete_client(scaf_client *c){
 }
 
 void text_print_clients(void){
-   printf("%-6s%-9s%-8s%-15s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "EFFICIENCY");
-   printf("%-6s%-9s%-8d%-15s%-10s\n", "all", "-", max_threads, "-", "-");
+   printf("%-9s%-9s%-8s%-15s%-5s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "EFF", "CHECKINS");
+   printf("%-9s%-9s%-8d%-15s%-5s%-10s\n", "all", "-", max_threads, "-", "-", "-");
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      printf("%-6d%-9s%-8d%-15p%-10f\n", current->pid, current->name, current->threads, current->current_section, current->metric);
+      printf("%-9d%-9s%-8d%-15p%1.2f %-10u\n", current->pid, current->name, current->threads, current->current_section, current->metric, current->checkins);
    }
    printf("\n");
    fflush(stdout);
@@ -349,6 +350,7 @@ int perform_client_request(scaf_client_message *client_message){
       client->current_section = client_message->section;
       client->metric = client_metric;
       client_threads = client->threads;
+      client->checkins++;
       UNLOCK_CLIENTS;
       return client_threads;
    }
