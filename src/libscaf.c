@@ -833,7 +833,10 @@ static void* scaf_gomp_training_control(void *unused){
         ptrace(PTRACE_KILL, expPid, NULL, NULL);
         abort();
       }
-      ptrace(PTRACE_CONT, expPid, NULL, SIGINT);
+      // Deliver a SIGINT, continue the experiment, and detach. The experiment
+      // process will return from the bogus/noop syscall and go straight into
+      // the SIGINT signal handler.
+      ptrace(PTRACE_DETACH, expPid, NULL, SIGINT);
 #endif //__linux__
 #if defined(__sun)
       __sol_proc_setsig(expPid, SIGINT);
