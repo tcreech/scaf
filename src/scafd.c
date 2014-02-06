@@ -375,7 +375,6 @@ void maxspeedup_referee_body(void* data){
       float metric_sum = 0.0;
       int num_clients = HASH_COUNT(clients);
 
-      int i=0;
       HASH_ITER(hh, clients, current, tmp){
          if(current->threads > 1)
             current->log_factor = MAX((current->metric * current->threads - 1.0),1.0)/log(current->threads);
@@ -383,24 +382,19 @@ void maxspeedup_referee_body(void* data){
             current->log_factor = SERIAL_LOG_FACTOR;
 
          metric_sum += current->log_factor;
-         i++;
       }
 
       int available_threads = max_threads - ceil(bg_utilization - 0.5);
       int remaining_rations = MAX(available_threads, 1);
       float proc_ipc = ((float)(remaining_rations)) / metric_sum;
 
-      i=0;
       HASH_ITER(hh, clients, current, tmp){
          float exact_ration = current->log_factor * proc_ipc;
          int min_ration = floor(exact_ration);
          current->threads = min_ration==0?1:min_ration;
          remaining_rations -= current->threads;
-         i++;
       }
 
-      i=0;
-      double logentrytime = rtclock() - startuptime;
       HASH_ITER(hh, clients, current, tmp){
          if(remaining_rations!=0){
 
