@@ -314,7 +314,6 @@ int scaf_section_start(void* section){
    float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
    float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / scaf_latest_efficiency_duration;
    float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, SCAF_LOWPASS_TIME_CONSTANT);
-   //printf(BLUE "Latest: %f; raw: %f; stime: %f; ptime %f; seff: %f; peff: %f\n" RESET, scaf_latest_efficiency_smooth, scaf_latest_efficiency, scaf_serial_duration, scaf_section_duration, scaf_serial_efficiency, scaf_section_efficiency);
 
    // Communicate the latest results with the SCAF daemon and get an allocation update, but only if this wouldn't exceed our desired communication rate.
    if(!skip_this_communication){
@@ -432,7 +431,6 @@ static inline void scaf_training_start(void){
    // Also install the end of the training as the SIGALRM handler.
    signal(SIGALRM, scaf_training_end);
 
-   //printf(BLUE "SCAF training started." RESET "\n");
    if(SCAF_ENFORCE_TRAINING_TIME_LIMIT)
       alarm(SCAF_TRAINING_TIME_LIMIT_SECONDS);
 }
@@ -477,8 +475,6 @@ static inline void scaf_training_end(int sig){
       scaf_section_duration = 1.0;
    }
 #endif
-
-   //printf(BLUE "SCAF training (%p, pid %d) finished in %f seconds, ipc of %f." RESET "\n", current_section->section_id, getpid(), scaf_section_duration, scaf_section_ipc);
 
    void *context = zmq_init(1);
    scafd = zmq_socket (context, ZMQ_REQ);
@@ -766,7 +762,6 @@ static void* scaf_gomp_training_control(void *unused){
     }
     assert(syscall >= 0);
     if(syscall == __NR_scaf_training_done){
-      //printf(RED "Parent: this is a bogus syscall that indicates the training ender is in control. We'll stop tracing.\n" RESET);
 #if defined(__linux__)
       ptrace(PTRACE_DETACH, expPid, NULL, NULL);
 #endif //__linux__
