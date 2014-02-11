@@ -160,14 +160,13 @@ struct proc_stat {
 #define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
 #define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(SCAF_DEBUG)
 #define DEBUG_TEST 1
 #else
 #define DEBUG_TEST 0
 #endif
 
 #define debug_print(...) \
-   do { if (DEBUG_TEST) fprintf(stderr, "%s:%d:%s(): " __FILE__, \
-         __LINE__, __func__, __VA_ARGS__); } while (0)
+   do { if (DEBUG_TEST) fprintf(stderr, __VA_ARGS__); } while (0)
 
 #endif //defined SCAF_H
