@@ -3,6 +3,8 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <stdarg.h>
 #include <uthash.h>
 #include <sys/time.h>
 #include <time.h>
@@ -154,4 +156,14 @@ struct proc_stat {
 #define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
 #define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
 #define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
+
+#ifdef DEBUG
+#define DEBUG_TEST 1
+#else
+#define DEBUG_TEST 0
+#endif
+
+#define debug_print(...) \
+   do { if (DEBUG_TEST) fprintf(stderr, "%s:%d:%s(): " __FILE__, \
+         __LINE__, __func__, __VA_ARGS__); } while (0)
 
