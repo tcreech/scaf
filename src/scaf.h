@@ -1,3 +1,6 @@
+#ifndef SCAF_H
+#define SCAF_H
+
 #define SCAF_CONNECT_STRING "ipc:///tmp/ipc-scafd"
 //#define SCAF_CONNECT_STRING "tcp://localhost:5555"
 
@@ -167,3 +170,4 @@ struct proc_stat {
    do { if (DEBUG_TEST) fprintf(stderr, "%s:%d:%s(): " __FILE__, \
          __LINE__, __func__, __VA_ARGS__); } while (0)
 
+#endif //defined SCAF_H
