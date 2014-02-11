@@ -183,6 +183,7 @@ float proc_get_cpus_used(void){
    int long total_idle = (g_idle[1] - g_idle[0]) + (scaf_used>0?scaf_used:0);
 
    int long non_scaf_used  = (used_utime[1] - used_utime[0]) + (used_stime[1] - used_stime[0]);
+   (void)non_scaf_used; // Quiet the compiler
    int long used = total_used - scaf_used;
    int long total = used + total_idle;
 
@@ -262,7 +263,6 @@ void text_print_clients(void){
 
 void curses_print_clients(void){
    move(0,0); clrtobot();
-   int i;
    int max = HASH_COUNT(clients);
    start_color();
    init_pair(1, COLOR_WHITE, COLOR_BLUE);
@@ -375,7 +375,6 @@ void maxspeedup_referee_body(void* data){
       scaf_client *current, *tmp;
 
       float metric_sum = 0.0;
-      int num_clients = HASH_COUNT(clients);
 
       HASH_ITER(hh, clients, current, tmp){
          if(current->threads > 1)
@@ -483,6 +482,7 @@ void text_scoreboard_body(void* data){
 void curses_scoreboard_body(void* data){
    WINDOW *wnd;
    wnd = initscr();
+   (void)wnd; // Quiet the compiler
    noecho();
    clear();
    refresh();
@@ -580,7 +580,6 @@ int main(int argc, char **argv){
     signal(SIGUSR2, referee_switch_handler);
 
     void *context = zmq_init (1);
-    int num_clients = 0;
 
     //  Socket to talk to clients
     void *responder = zmq_socket (context, ZMQ_REP);

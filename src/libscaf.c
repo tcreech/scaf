@@ -9,9 +9,12 @@
 #include <fcntl.h>
 #include <time.h>
 #include <zmq.h>
-#if !defined(__KNC__)
+#if defined(__KNC__)
+int omp_get_num_threads(void);
+int omp_get_max_threads(void);
+#else
 #include <omp.h>
-#endif //!defined(__KNC__)
+#endif //defined(__KNC__)
 #include "scaf.h"
 #if(HAVE_LIBPAPI)
 #include <papi.h>
@@ -498,7 +501,7 @@ static inline void scaf_training_end(int sig){
 #else
       zmq_recv(scafd, &reply, 0);
 #endif
-   int response = *((int*)(zmq_msg_data(&reply)));
+   //int response = *((int*)(zmq_msg_data(&reply)));
    zmq_msg_close(&reply);
 
    zmq_close(scafd);
