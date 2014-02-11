@@ -169,4 +169,7 @@ struct proc_stat {
 #define debug_print(...) \
    do { if (DEBUG_TEST) fprintf(stderr, __VA_ARGS__); } while (0)
 
+#define always_print(...) \
+   do { if (1) fprintf(stderr, __VA_ARGS__); } while (0)
+
 #endif //defined SCAF_H
