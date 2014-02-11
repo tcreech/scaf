@@ -208,7 +208,7 @@ static int scaf_connect(void *scafd){
       // No response.
       scafd_available = 0;
       omp_max_threads = omp_get_max_threads();
-      printf("WARNING: This SCAF client could not communicate with scafd.\n");
+      always_print(RED "WARNING: This SCAF client could not communicate with scafd." RESET "\n");
       return omp_max_threads;
    }
 }
@@ -352,7 +352,7 @@ int scaf_section_start(void* section){
       long long int ins;
       int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
-      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
    }
 #else
    {
@@ -385,7 +385,7 @@ void scaf_section_end(void){
       float rtime, ptime, ipc;
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
-      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
       scaf_section_ipc += ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
@@ -418,7 +418,7 @@ static inline void scaf_training_start(void){
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
-      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
    }
 #else
    {
@@ -443,20 +443,20 @@ static inline void scaf_training_end(int sig){
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
-   //printf(BLUE "SCAF training ending.");
+   debug_print(BLUE "SCAF training ending.");
    if(sig == SIGALRM){
-     //printf(" (took too long.)\n");
+     debug_print(" (took too long.)\n");
    }
    else if(sig == 0){
-     //printf(" (finished.)\n");
+     debug_print(" (finished.)\n");
    }
    else if(sig == SIGINT){
-     //printf(" (killed.)\n");
+     debug_print(" (killed.)\n");
    }
    else {
-     //printf(" (not sure why?)\n");
+     debug_print(" (not sure why?)\n");
    }
-   //printf(RESET);
+   debug_print(RESET);
 
 #if(HAVE_LIBPAPI)
    {
@@ -464,7 +464,7 @@ static inline void scaf_training_end(int sig){
       float rtime, ptime, ipc;
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
-      if(ret != PAPI_OK) printf("WARNING: Bad PAPI things happening. (%d)\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
       scaf_section_ipc = ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
@@ -582,7 +582,7 @@ void scaf_gomp_training_destroy(void){
    current_section->training_ipc_eff = scaf_section_ipc / response;
    current_section->training_ipc_speedup = ((float)current_section->training_threads) * current_section->training_ipc_eff;
    current_section->training_complete = 1;
-   //printf(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
+   debug_print(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
 }
 
 static void* scaf_gomp_training_control(void *unused){
@@ -752,7 +752,7 @@ static void* scaf_gomp_training_control(void *unused){
 #endif //__linux__
 
     if(syscall < 0 && signal == SIGSEGV){
-      printf(BOLDRED "WARNING: experiment %d hit SIGSEGV." RESET "\n", expPid);
+      always_print(BOLDRED "WARNING: experiment %d hit SIGSEGV." RESET "\n", expPid);
       // The experiment has segfaulted, so we'll have to just stop here.
       // Deliver a SIGINT, continue the experiment, and detach. The experiment
       // process will return from the bogus/noop syscall and go straight into
@@ -803,7 +803,7 @@ static void* scaf_gomp_training_control(void *unused){
       }else if(strcmp("/proc/stat", file)==0){
          //This is ok because it's always a read-only file.
       }else{
-         //printf("Unsafe open: %s\n", file);
+         debug_print(RED "Unsafe open: %s" RESET "\n", file);
          foundUnsafeOpen = 1;
       }
     }else if(syscall == __NR_mmap){
@@ -834,7 +834,7 @@ static void* scaf_gomp_training_control(void *unused){
       // This is not one of the syscalls deemed ``safe''. (Its completion by
       // the kernel may affect the correctness of the program.) We must stop
       // the training fork now.
-      printf("Parent: child (%d) has behaved badly (section %p, syscall %d). Stopping it. (parent=%d)\n", expPid, current_section_id, syscall, getpid());
+      debug_print(RED "Parent: child (%d) has behaved badly (section %p, syscall %d). Stopping it. (parent=%d)" RESET "\n", expPid, current_section_id, syscall, getpid());
 #if defined(__linux__)
       void *badCall = (void*)0xbadCa11;
       if (ptrace(PTRACE_POKEUSER, expPid, ORIG_ACCUM, badCall) < 0) {
