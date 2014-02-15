@@ -13,7 +13,7 @@ index 4e7dec0..8e675fd 100644
  
  /* external schedule constants, duplicate enum omp_sched in omp.h in order to not include it here */
 diff --git a/src/kmp_csupport.c b/src/kmp_csupport.c
-index 0fcf09b..7a99985 100644
+index 0fcf09b..64801c0 100644
 --- a/src/kmp_csupport.c
 +++ b/src/kmp_csupport.c
 @@ -40,6 +40,12 @@
@@ -86,10 +86,12 @@ index 0fcf09b..7a99985 100644
      __kmp_fork_call( loc, gtid, TRUE,
              argc,
              VOLATILE_CAST(microtask_t) microtask,
-@@ -314,6 +370,9 @@ __kmpc_fork_call(ident_t *loc, kmp_int32 argc, kmpc_micro microtask, ...)
+@@ -314,6 +370,11 @@ __kmpc_fork_call(ident_t *loc, kmp_int32 argc, kmpc_micro microtask, ...)
              );
      __kmp_join_call( loc, gtid );
  
++    //SCAF: Record the section as ended and collect experiment results if
++    //necessary.
 +    scaf_section_end();
 +    scaf_gomp_training_destroy();
 +
@@ -97,7 +99,7 @@ index 0fcf09b..7a99985 100644
    }
  }
 diff --git a/src/kmp_runtime.c b/src/kmp_runtime.c
-index 659fe76..4ae0160 100644
+index 659fe76..9145a76 100644
 --- a/src/kmp_runtime.c
 +++ b/src/kmp_runtime.c
 @@ -45,6 +45,12 @@
@@ -122,14 +124,13 @@ index 659fe76..4ae0160 100644
  #if OMP_40_ENABLED
    , int enter_teams
  #endif /* OMP_40_ENABLED */
-@@ -2236,6 +2242,24 @@ __kmp_reserve_threads( kmp_root_t *root, kmp_team_t *parent_team,
+@@ -2236,6 +2242,23 @@ __kmp_reserve_threads( kmp_root_t *root, kmp_team_t *parent_team,
              }
          }
      }
 +    else if ( __kmp_global.g.g_dynamic_mode == dynamic_scaf ) {
 +        new_nthreads = scaf_last_allocation - __kmp_nth + (root->r.r_active ? 1
 +          : root->r.r_hot_team->t.t_nproc);
-+        //new_nthreads = scaf_last_allocation;
 +        if ( new_nthreads <= 1 ) {
 +            KC_TRACE( 10, ( "__kmp_reserve_threads: T#%d thread limit reduced reservation to 1 thread\n",
 +              master_tid ));
@@ -147,7 +148,7 @@ index 659fe76..4ae0160 100644
      else {
          KMP_ASSERT( 0 );
      }
-@@ -2567,7 +2591,7 @@ __kmp_fork_call(
+@@ -2567,7 +2590,7 @@ __kmp_fork_call(
      {
          nthreads = master_set_numthreads ?
              master_set_numthreads : get__nproc_2( parent_team, master_tid );
