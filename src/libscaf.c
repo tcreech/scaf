@@ -805,6 +805,8 @@ static void* scaf_gomp_training_control(void *unused){
          //This is ok because it's always a read-only file.
       }else if(strcmp("/proc/stat", file)==0){
          //This is ok because it's always a read-only file.
+      }else if(strcmp("/proc/meminfo", file)==0){
+         //This is ok because it's always a read-only file.
       }else{
          debug_print(RED "Unsafe open: %s" RESET "\n", file);
          foundUnsafeOpen = 1;
@@ -827,7 +829,8 @@ static void* scaf_gomp_training_control(void *unused){
           syscall != __NR_write && syscall != __NR_restart_syscall &&
           syscall != __NR_mprotect && syscall != __NR_sched_getaffinity &&
           syscall != __NR_sched_setaffinity && syscall != __NR_open &&
-          syscall != __NR_close && syscall != __NR_mmap
+          syscall != __NR_close && syscall != __NR_mmap &&
+          syscall != __NR_fstat && syscall != __NR_munmap
         ) || foundRaW || foundUnsafeOpen){
 #endif //__linux__
 #if defined(__sun)
