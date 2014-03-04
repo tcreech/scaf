@@ -14,9 +14,9 @@ make dist
 Of course, you can also do the standard ./configure && make install.
 
 TESTED PLATFORMS:
-- x86_64 on Linux, including 2x Opteron 6212s (16 threads), 2x Nahalem Xeons (8 threads), and SGI UV 2000 (512-1024 cores)
+- x86_64 on Linux, including 2x Opteron 6212s (16 threads), 2x Nahalem Xeons (8 threads), Xeon Phi 5110P, and SGI UV 2000 (512-1024 cores)
 - TileGx on Linux (36 cores)
-- Sparc T2 on Solaris 10 (64 threads)
+- Sparc T2 on Solaris 10 and 11 (64 threads)
 
 LIBGOMP INSTRUCTIONS:
 
