@@ -752,7 +752,6 @@ static void* scaf_gomp_training_control(void *unused){
 #if defined(__linux__)
     int syscall = ptrace(PTRACE_PEEKUSER, expPid, ORIG_ACCUM, 0);
     int foundUnsafeOpen = 0;
-#endif //__linux__
 
     if(syscall < 0 && signal == SIGSEGV){
       always_print(BOLDRED "WARNING: experiment %d hit SIGSEGV." RESET "\n", expPid);
@@ -764,6 +763,8 @@ static void* scaf_gomp_training_control(void *unused){
       break;
     }
     assert(syscall >= 0);
+#endif //__linux__
+
     if(syscall == __NR_scaf_training_done){
 #if defined(__linux__)
       ptrace(PTRACE_DETACH, expPid, NULL, NULL);
