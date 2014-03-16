@@ -19,12 +19,12 @@
 #include "scaf.h"
 #include "uthash.h"
 
-static int omp_get_max_threads(void){
+static int num_online_processors(void){
    char *maxenv = getenv("OMP_NUM_THREADS");
    if(maxenv)
       return atoi(maxenv);
    else
-      return 240;
+      return sysconf(_SC_NPROCESSORS_ONLN);
 }
 
 #if defined(__sun)
@@ -553,7 +553,7 @@ int main(int argc, char **argv){
        }
     }
 
-    max_threads = omp_get_max_threads();
+    max_threads = num_online_processors();
     bg_utilization = proc_get_cpus_used();
     startuptime = rtclock();
 
