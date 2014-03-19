@@ -317,7 +317,7 @@ int get_extra_threads(int num_clients){
    return max_threads % num_clients;
 }
 
-int perform_client_request(scaf_client_message *client_message){
+int perform_client_request(scaf_client_message *client_message, int *num_clients_report){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
@@ -333,10 +333,12 @@ int perform_client_request(scaf_client_message *client_message){
       client_threads = get_per_client_threads(num_clients+1);
       add_client(client_pid, client_threads, client_message->section);
       UNLOCK_CLIENTS;
+      *num_clients_report = num_clients+1;
       return client_threads;
    }
    else if(client_request == SCAF_SECTION_START){
       RW_LOCK_CLIENTS;
+      int num_clients = HASH_COUNT(clients);
       scaf_client *client = find_client(client_pid);
       assert(client);
       client->current_section = client_message->section;
@@ -344,20 +346,23 @@ int perform_client_request(scaf_client_message *client_message){
       client_threads = client->threads;
       client->checkins++;
       UNLOCK_CLIENTS;
+      *num_clients_report = num_clients;
       return client_threads;
    }
    else if(client_request == SCAF_FORMER_CLIENT){
       RW_LOCK_CLIENTS;
       scaf_client *old_client = find_client(client_pid);
       delete_client(old_client);
+      int num_clients = HASH_COUNT(clients);
       UNLOCK_CLIENTS;
       free(old_client);
-
+      *num_clients_report = num_clients;
       return 0;
    }
 
    // Invalid request?
 
+   *num_clients_report = 0;
    return 0;
 }
 
@@ -593,15 +598,20 @@ int main(int argc, char **argv){
 
         scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
         // Update client bookkeeping if necessary
-        int threads = perform_client_request(client_message);
+        int num_clients;
+        int threads = perform_client_request(client_message, &num_clients);
         assert(threads > 0 || client_message->message == SCAF_FORMER_CLIENT);
         assert(threads < 4096);
         zmq_msg_close (&request);
 
         //  Send reply back to client (even if the client doesn't care about an answer)
         zmq_msg_t reply;
-        zmq_msg_init_size (&reply, sizeof(int));
-        *((int*)(zmq_msg_data(&reply))) = threads;
+        zmq_msg_init_size (&reply, sizeof(scaf_daemon_message));
+        scaf_daemon_message *dm = zmq_msg_data(&reply);
+        dm->message = SCAF_DAEMON_FEEDBACK;
+        dm->threads = threads;
+        dm->num_clients = num_clients;
+
 #if ZMQ_VERSION_MAJOR > 2
         zmq_sendmsg (responder, &reply, 0);
 #else

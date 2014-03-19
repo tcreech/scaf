@@ -46,6 +46,7 @@ enum scaf_message_purpose {
    SCAF_NEW_CLIENT,
    SCAF_FORMER_CLIENT,
    SCAF_SECTION_START,
+   SCAF_DAEMON_FEEDBACK,
 };
 
 typedef struct {
@@ -79,6 +80,12 @@ typedef struct {
    void* section;
    float efficiency;
 } scaf_client_message;
+
+typedef struct {
+   enum scaf_message_purpose message;
+   int threads;
+   int num_clients;
+} scaf_daemon_message;
 
 typedef struct {
    void (*fn) (void *);

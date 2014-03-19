@@ -197,7 +197,8 @@ static int scaf_connect(void *scafd){
 #else
       zmq_recv(scafd, &reply, 0);
 #endif
-      int response = *((int*)(zmq_msg_data(&reply)));
+      scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
+      assert(response.message == SCAF_DAEMON_FEEDBACK);
       zmq_msg_close(&reply);
 
       // Register scaf_retire() to be called upon exit. This just a courtesy
@@ -206,7 +207,7 @@ static int scaf_connect(void *scafd){
       // few seconds.
       atexit(scaf_retire);
 
-      return response;
+      return response.threads;
    } else {
       // No response.
       scafd_available = 0;
@@ -344,9 +345,10 @@ int scaf_section_start(void* section){
 #else
       zmq_recv(scafd, &reply, 0);
 #endif
-      int response = *((int*)(zmq_msg_data(&reply)));
+      scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
+      assert(response.message == SCAF_DAEMON_FEEDBACK);
       zmq_msg_close(&reply);
-      current_threads = response;
+      current_threads = response.threads;
    }
 
 #if(HAVE_LIBPAPI)
