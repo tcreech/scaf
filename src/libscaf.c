@@ -104,6 +104,7 @@ static int scafd_available;
 static int scaf_disable_experiments = 0;
 static int scaf_enable_firsttouch = 0;
 static int scaf_experiment_process = 0;
+static int scaf_lazy_experiments;
 static int scaf_mypid;
 static int omp_max_threads;
 static int scaf_nullfd;
@@ -120,6 +121,7 @@ static pthread_t scaf_master_thread;
 
 static void* current_section_id;
 static int current_threads;
+static int current_num_clients = 1;
 static scaf_client_section *current_section = NULL;
 static scaf_client_section *sections = NULL;
 
@@ -207,6 +209,7 @@ static int scaf_connect(void *scafd){
       // few seconds.
       atexit(scaf_retire);
 
+      current_num_clients = response.num_clients;
       return response.threads;
    } else {
       // No response.
@@ -238,6 +241,12 @@ static void* scaf_init(void **context_p){
      scaf_disable_experiments = atoi(notraining);
    else
      scaf_disable_experiments = 0;
+
+   char *lazyexperiments = getenv("SCAF_LAZY_EXPERIMENTS");
+   if(lazyexperiments)
+      scaf_lazy_experiments = atoi(lazyexperiments);
+   else
+      scaf_lazy_experiments = 1;
 
    char *firsttouch = getenv("SCAF_ENABLE_FIRSTTOUCH");
    if(firsttouch)
@@ -353,6 +362,7 @@ int scaf_section_start(void* section){
       scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
       assert(response.message == SCAF_DAEMON_FEEDBACK);
       zmq_msg_close(&reply);
+      current_num_clients = response.num_clients;
       current_threads = response.threads;
    }
 
@@ -374,7 +384,7 @@ int scaf_section_start(void* section){
    scaf_section_ipc = 0.0;
 
 #if(HAVE_LIBPAPI)
-   if(!current_section->experiment_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_experiments)
+   if(!current_section->experiment_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_experiments && !(scaf_lazy_experiments && current_num_clients < 2))
 #if defined(__KNC__)
       return current_threads-4;
 #else
@@ -520,6 +530,11 @@ int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
    if(scaf_disable_experiments || !scafd_available || current_section->experiment_complete || !(current_threads>1))
       return 0;
 
+   // Also do not experiment if we are doing lazy experiments and there is no
+   // multiprogramming right now.
+   if(scaf_lazy_experiments && current_num_clients < 2)
+      return 0;
+
 #if(! HAVE_LIBPAPI)
    {
       return 0;
@@ -546,6 +561,11 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
 void scaf_gomp_experiment_destroy(void){
    // First of all, only experiment if necessary.
    if(scaf_disable_experiments || !scafd_available || current_section->experiment_complete || !(current_threads>1))
+      return;
+
+   // Also do not experiment if we are doing lazy experiments and there is no
+   // multiprogramming right now.
+   if(scaf_lazy_experiments && current_num_clients < 2)
       return;
 
 #if(! HAVE_LIBPAPI)
