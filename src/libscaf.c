@@ -64,15 +64,15 @@ int omp_get_max_threads(void);
 
 #define SCAFD_TIMEOUT_SECONDS 1
 
-// Training-related options
-// Set this to 1 if parallel execution should wait for training to finish;
+// Experiment-related options
+// Set this to 1 if parallel execution should wait for experiment to finish;
 // otherwise it will be forced to terminate early.
-#define SCAF_PARALLEL_WAIT_FOR_TRAINING 0
+#define SCAF_PARALLEL_WAIT_FOR_EXPERIMENT 0
 // Set to 1 if SCAF should enforce a hard limit on the amount of time spent
 // running a serial experiment.
-#define SCAF_ENFORCE_TRAINING_TIME_LIMIT 0
-// The maximum amount of time that a training fork will run for.
-#define SCAF_TRAINING_TIME_LIMIT_SECONDS 10
+#define SCAF_ENFORCE_EXPERIMENT_TIME_LIMIT 0
+// The maximum amount of time that a experiment fork will run for.
+#define SCAF_EXPERIMENT_TIME_LIMIT_SECONDS 10
 
 // Limit measured efficiency to this value. This can restrict the effects of
 // timing glitches resulting in crazy values.
@@ -91,17 +91,17 @@ int omp_get_max_threads(void);
 //#define PAPI_HL_MEASURE PAPI_flips
 #define PAPI_HL_MEASURE PAPI_ipc
 
-static void* scaf_gomp_training_control(void *unused);
-static scaf_client_training_description scaf_training_desc;
-static inline void scaf_training_start(void);
-static inline void scaf_training_end(int);
+static void* scaf_gomp_experiment_control(void *unused);
+static scaf_client_experiment_description scaf_experiment_desc;
+static inline void scaf_experiment_start(void);
+static inline void scaf_experiment_end(int);
 
 static int did_scaf_startup;
 static void *scafd;
 static void *scafd_context;
 
 static int scafd_available;
-static int scaf_disable_training = 0;
+static int scaf_disable_experiments = 0;
 static int scaf_enable_firsttouch = 0;
 static int scaf_experiment_process = 0;
 static int scaf_mypid;
@@ -147,9 +147,9 @@ static scaf_client_section inline *scaf_add_client_section(void *section_id){
    new_section->section_id = section_id;
    new_section->last_time = 0;
    new_section->last_ipc = 1;
-   new_section->training_complete = 0;
+   new_section->experiment_complete = 0;
    new_section->first_touch_complete = !scaf_enable_firsttouch;
-   new_section->training_serial_ipc = 0.5;
+   new_section->experiment_serial_ipc = 0.5;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
 }
@@ -228,11 +228,16 @@ static void* scaf_init(void **context_p){
    else
       scaf_feedback_freq = 1;
 
-   char *notrain = getenv("SCAF_DISABLE_TRAINING");
-   if(notrain)
-     scaf_disable_training = atoi(notrain);
+   // We used to call experiments "training." Obey the old environment variable
+   // for now.
+   char *noexperiments = getenv("SCAF_DISABLE_EXPERIMENTS");
+   char *notraining = getenv("SCAF_DISABLE_TRAINING");
+   if(noexperiments)
+     scaf_disable_experiments = atoi(noexperiments);
+   else if(notraining)
+     scaf_disable_experiments = atoi(notraining);
    else
-     scaf_disable_training = 0;
+     scaf_disable_experiments = 0;
 
    char *firsttouch = getenv("SCAF_ENABLE_FIRSTTOUCH");
    if(firsttouch)
@@ -369,7 +374,7 @@ int scaf_section_start(void* section){
    scaf_section_ipc = 0.0;
 
 #if(HAVE_LIBPAPI)
-   if(!current_section->training_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_training)
+   if(!current_section->experiment_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_experiments)
 #if defined(__KNC__)
       return current_threads-4;
 #else
@@ -405,12 +410,12 @@ void scaf_section_end(void){
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
-   scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->training_serial_ipc);
+   scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->experiment_serial_ipc);
 
    return;
 }
 
-static inline void scaf_training_start(void){
+static inline void scaf_experiment_start(void){
 
 #if(HAVE_LIBPAPI)
    {
@@ -431,24 +436,24 @@ static inline void scaf_training_start(void){
    }
 #endif
 
-   // Install the end of the training as the SIGINT handler.
-   signal(SIGINT, scaf_training_end);
-   // Also install the end of the training as the SIGALRM handler.
-   signal(SIGALRM, scaf_training_end);
+   // Install the end of the experiment as the SIGINT handler.
+   signal(SIGINT, scaf_experiment_end);
+   // Also install the end of the experiment as the SIGALRM handler.
+   signal(SIGALRM, scaf_experiment_end);
 
-   if(SCAF_ENFORCE_TRAINING_TIME_LIMIT)
-      alarm(SCAF_TRAINING_TIME_LIMIT_SECONDS);
+   if(SCAF_ENFORCE_EXPERIMENT_TIME_LIMIT)
+      alarm(SCAF_EXPERIMENT_TIME_LIMIT_SECONDS);
 }
 
-static inline void scaf_training_end(int sig){
+static inline void scaf_experiment_end(int sig){
 
-   syscall(__NR_scaf_training_done);
+   syscall(__NR_scaf_experiment_done);
 
    // Ignore all the signals which we might still get.
    signal(SIGALRM, SIG_IGN);
    signal(SIGINT, SIG_IGN);
 
-   debug_print(BLUE "SCAF training ending.");
+   debug_print(BLUE "SCAF experiment ending.");
    if(sig == SIGALRM){
      debug_print(" (took too long.)\n");
    }
@@ -510,9 +515,9 @@ static inline void scaf_training_end(int sig){
    _Exit(0);
 }
 
-int scaf_gomp_training_create(void (*fn) (void*), void *data){
-   // First of all, only train if necessary.
-   if(scaf_disable_training || !scafd_available || current_section->training_complete || !(current_threads>1))
+int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
+   // First of all, only experiment if necessary.
+   if(scaf_disable_experiments || !scafd_available || current_section->experiment_complete || !(current_threads>1))
       return 0;
 
 #if(! HAVE_LIBPAPI)
@@ -524,18 +529,23 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
    if(!current_section->first_touch_complete)
       return 0;
 
-   scaf_training_desc.fn = fn;
-   scaf_training_desc.data = data;
-   pthread_barrier_init(&(scaf_training_desc.control_pthread_b), NULL, 2);
-   pthread_create(&(scaf_training_desc.control_pthread), NULL, &scaf_gomp_training_control, NULL);
-   pthread_barrier_wait(&(scaf_training_desc.control_pthread_b));
-   pthread_barrier_destroy(&(scaf_training_desc.control_pthread_b));
+   scaf_experiment_desc.fn = fn;
+   scaf_experiment_desc.data = data;
+   pthread_barrier_init(&(scaf_experiment_desc.control_pthread_b), NULL, 2);
+   pthread_create(&(scaf_experiment_desc.control_pthread), NULL, &scaf_gomp_experiment_control, NULL);
+   pthread_barrier_wait(&(scaf_experiment_desc.control_pthread_b));
+   pthread_barrier_destroy(&(scaf_experiment_desc.control_pthread_b));
    return 1;
 }
 
-void scaf_gomp_training_destroy(void){
-   // First of all, only train if necessary.
-   if(scaf_disable_training || !scafd_available || current_section->training_complete || !(current_threads>1))
+// An alias for the above.
+int scaf_gomp_training_create(void (*fn) (void*), void *data){
+   return scaf_gomp_experiment_create(fn, data);
+}
+
+void scaf_gomp_experiment_destroy(void){
+   // First of all, only experiment if necessary.
+   if(scaf_disable_experiments || !scafd_available || current_section->experiment_complete || !(current_threads>1))
       return;
 
 #if(! HAVE_LIBPAPI)
@@ -549,23 +559,23 @@ void scaf_gomp_training_destroy(void){
       return;
    }
 
-#if(! SCAF_PARALLEL_WAIT_FOR_TRAINING)
+#if(! SCAF_PARALLEL_WAIT_FOR_EXPERIMENT)
    {
-      kill(scaf_training_desc.training_pid, SIGALRM);
+      kill(scaf_experiment_desc.experiment_pid, SIGALRM);
    }
 #endif
 
-   // Get the training results from the child process.
-   void *training_child = zmq_socket(scafd_context, ZMQ_REP);
+   // Get the experiment results from the child process.
+   void *experiment_child = zmq_socket(scafd_context, ZMQ_REP);
    char child_connect_string[64];
    sprintf(child_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
-   assert(0==zmq_bind(training_child, child_connect_string));
+   assert(0==zmq_bind(experiment_child, child_connect_string));
    zmq_msg_t reply;
    zmq_msg_init(&reply);
 #if ZMQ_VERSION_MAJOR > 2
-      zmq_recvmsg(training_child, &reply, 0);
+      zmq_recvmsg(experiment_child, &reply, 0);
 #else
-      zmq_recv(training_child, &reply, 0);
+      zmq_recv(experiment_child, &reply, 0);
 #endif
    float response = *((float*)(zmq_msg_data(&reply)));
    zmq_msg_close(&reply);
@@ -573,26 +583,31 @@ void scaf_gomp_training_destroy(void){
    zmq_msg_init_size (&reply, sizeof(int));
    *((int*)(zmq_msg_data(&reply))) = 0;
 #if ZMQ_VERSION_MAJOR > 2
-   zmq_sendmsg (training_child, &reply, 0);
+   zmq_sendmsg (experiment_child, &reply, 0);
 #else
-   zmq_send (training_child, &reply, 0);
+   zmq_send (experiment_child, &reply, 0);
 #endif
    zmq_msg_close (&reply);
-   zmq_close(training_child);
+   zmq_close(experiment_child);
 
-   pthread_join(scaf_training_desc.control_pthread, NULL);
-   current_section->training_threads = current_threads-1;
-   current_section->training_serial_ipc = response;
-   current_section->training_parallel_ipc = scaf_section_ipc;
-   current_section->training_ipc_eff = scaf_section_ipc / response;
-   current_section->training_ipc_speedup = ((float)current_section->training_threads) * current_section->training_ipc_eff;
-   current_section->training_complete = 1;
-   debug_print(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->training_threads, scaf_section_duration, current_section->training_serial_ipc, current_section->training_parallel_ipc, current_section->training_ipc_eff, current_section->training_ipc_speedup);
+   pthread_join(scaf_experiment_desc.control_pthread, NULL);
+   current_section->experiment_threads = current_threads-1;
+   current_section->experiment_serial_ipc = response;
+   current_section->experiment_parallel_ipc = scaf_section_ipc;
+   current_section->experiment_ipc_eff = scaf_section_ipc / response;
+   current_section->experiment_ipc_speedup = ((float)current_section->experiment_threads) * current_section->experiment_ipc_eff;
+   current_section->experiment_complete = 1;
+   debug_print(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->experiment_threads, scaf_section_duration, current_section->experiment_serial_ipc, current_section->experiment_parallel_ipc, current_section->experiment_ipc_eff, current_section->experiment_ipc_speedup);
 }
 
-static void* scaf_gomp_training_control(void *unused){
-   void (*fn) (void*) = scaf_training_desc.fn;
-   void *data = scaf_training_desc.data;
+// An alias for the above.
+void scaf_gomp_training_destroy(void){
+   scaf_gomp_experiment_destroy();
+}
+
+static void* scaf_gomp_experiment_control(void *unused){
+   void (*fn) (void*) = scaf_experiment_desc.fn;
+   void *data = scaf_experiment_desc.data;
 
   // Flush all file descriptors before forking. We can't have two copies of
   // buffered output going to file descriptors due to the fork.
@@ -607,14 +622,14 @@ static void* scaf_gomp_training_control(void *unused){
   pthread_sigmask(SIG_BLOCK, &sigs_int_alrm, &oldset);
 
   int expPid = fork();
-  scaf_training_desc.training_pid = expPid;
+  scaf_experiment_desc.experiment_pid = expPid;
   if(expPid==0){
     // Note that we are an experiment process.
     scaf_experiment_process = 1;
     // Put ourselves in the parent's process group.
     setpgid(0, scaf_mypid);
     // Start up our timing stuff with SCAF.
-    scaf_training_start();
+    scaf_experiment_start();
 
 
 #if defined(__linux__)
@@ -634,8 +649,8 @@ static void* scaf_gomp_training_control(void *unused){
     // syscalls and ensure that we don't affect the state of the machine
     // incorrectly.
     fn(data);
-    // When finished, send ourselves SIGINT to end the training.
-    scaf_training_end(0);
+    // When finished, send ourselves SIGINT to end the experiment.
+    scaf_experiment_end(0);
     // If we get this far, just quit.
     _Exit(0);
   }
@@ -667,9 +682,9 @@ static void* scaf_gomp_training_control(void *unused){
 
   // Meet the other thread at the barrier. It won't start running the proper
   // instance of the section until we hit this barrier. At this point in the
-  // training process, the instrumentation has been set up and we are just
+  // experiment process, the instrumentation has been set up and we are just
   // about to enter the work function.
-  pthread_barrier_wait(&(scaf_training_desc.control_pthread_b));
+  pthread_barrier_wait(&(scaf_experiment_desc.control_pthread_b));
 
   int foundRaW = 0;
   int foundW = 0;
@@ -722,9 +737,9 @@ static void* scaf_gomp_training_control(void *unused){
     if(signal>=0 && signal==SIGALRM){
 #endif //__sun
 
-      // The training has run long enough. We will stop it, but first let the
+      // The experiment has run long enough. We will stop it, but first let the
       // function run for another small period of time. This is just an easy
-      // way to ensure that our training measurements have a minimum allowed
+      // way to ensure that our experiment measurements have a minimum allowed
       // runtime.
 #if defined(__linux__)
       ptrace(PTRACE_CONT, expPid, NULL, 0);
@@ -767,7 +782,7 @@ static void* scaf_gomp_training_control(void *unused){
     assert(syscall >= 0);
 #endif //__linux__
 
-    if(syscall == __NR_scaf_training_done){
+    if(syscall == __NR_scaf_experiment_done){
 #if defined(__linux__)
       ptrace(PTRACE_DETACH, expPid, NULL, NULL);
 #endif //__linux__
@@ -842,7 +857,7 @@ static void* scaf_gomp_training_control(void *unused){
 #endif //__sun
       // This is not one of the syscalls deemed ``safe''. (Its completion by
       // the kernel may affect the correctness of the program.) We must stop
-      // the training fork now.
+      // the experiment fork now.
       debug_print(RED "Parent: child (%d) has behaved badly (section %p, syscall %d). Stopping it. (parent=%d)" RESET "\n", expPid, current_section_id, syscall, getpid());
 #if defined(__linux__)
       void *badCall = (void*)0xbadCa11;

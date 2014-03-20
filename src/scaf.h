@@ -23,7 +23,7 @@
     _a < _b ? _a : _b; })
 
 #if defined(__linux__)
-#define __NR_scaf_training_done 1337
+#define __NR_scaf_experiment_done 1337
 #endif //__linux__
 
 #if defined(__sun)
@@ -31,7 +31,7 @@
 // doesn't support codes which do NTP stuff. (We can't use an unused number as
 // in Linux since Solaris will kill a program making an invalid indirect
 // syscall before even giving it back to the tracing process.
-#define __NR_scaf_training_done 248
+#define __NR_scaf_experiment_done 248
 #endif //__sun
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9
@@ -64,13 +64,13 @@ typedef struct {
    void* section_id;
    float last_time;
    float last_ipc;
-   int training_complete;
+   int experiment_complete;
    int first_touch_complete;
-   int training_threads;
-   float training_serial_ipc;
-   float training_parallel_ipc;
-   float training_ipc_speedup;
-   float training_ipc_eff;
+   int experiment_threads;
+   float experiment_serial_ipc;
+   float experiment_parallel_ipc;
+   float experiment_ipc_speedup;
+   float experiment_ipc_eff;
    UT_hash_handle hh;
 } scaf_client_section;
 
@@ -92,8 +92,8 @@ typedef struct {
    void *data;
    pthread_t control_pthread;
    pthread_barrier_t control_pthread_b;
-   pid_t training_pid;
-} scaf_client_training_description;
+   pid_t experiment_pid;
+} scaf_client_experiment_description;
 
 void scaf_retire();
 
@@ -101,6 +101,10 @@ int scaf_section_start(void* section);
 
 void scaf_section_end(void);
 
+int scaf_gomp_experiment_create(void (*fn) (void*), void *data);
+void scaf_gomp_experiment_destroy(void);
+
+// These are just aliases for the above two functions.
 int scaf_gomp_training_create(void (*fn) (void*), void *data);
 void scaf_gomp_training_destroy(void);
 
