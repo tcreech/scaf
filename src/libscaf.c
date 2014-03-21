@@ -108,7 +108,6 @@ static int scaf_lazy_experiments;
 static int scaf_mypid;
 static int omp_max_threads;
 static int scaf_nullfd;
-static int scaf_feedback_freq = 1;
 
 static double scaf_init_rtclock;
 static float scaf_section_duration;
@@ -225,11 +224,6 @@ static void* scaf_init(void **context_p){
    scaf_mypid = getpid();
    scaf_init_rtclock = rtclock();
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
-   char *fbf = getenv("SCAF_FEEDBACK_FREQ");
-   if(fbf)
-      scaf_feedback_freq = atoi(fbf);
-   else
-      scaf_feedback_freq = 1;
 
    // We used to call experiments "training." Obey the old environment variable
    // for now.
@@ -292,9 +286,6 @@ void scaf_retire(void){
 }
 
 int scaf_section_start(void* section){
-   static int rate_limit_counter = 0;
-   int skip_this_communication = 0;
-
    current_section_id = section;
    if(current_section == NULL || current_section->section_id != section){
       current_section = scaf_find_client_section(current_section_id);
@@ -316,11 +307,6 @@ int scaf_section_start(void* section){
       return omp_max_threads;
    }
 
-   if(((rate_limit_counter++) % scaf_feedback_freq) != 0){
-      //current_threads = current_threads;
-      skip_this_communication = 1;
-   }
-
    if(current_threads < 1)
       current_threads=1;
    if(scaf_section_duration <= 0.000001){
@@ -333,38 +319,35 @@ int scaf_section_start(void* section){
    float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / scaf_latest_efficiency_duration;
    float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, SCAF_LOWPASS_TIME_CONSTANT);
 
-   // Communicate the latest results with the SCAF daemon and get an allocation update, but only if this wouldn't exceed our desired communication rate.
-   if(!skip_this_communication){
-      // Get num threads
-      zmq_msg_t request;
-      zmq_msg_init_size(&request, sizeof(scaf_client_message));
-      scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
-      scaf_message->message = SCAF_SECTION_START;
-      scaf_message->pid = scaf_mypid;
-      scaf_message->section = section;
+   // Get num threads
+   zmq_msg_t request;
+   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+   scaf_message->message = SCAF_SECTION_START;
+   scaf_message->pid = scaf_mypid;
+   scaf_message->section = section;
 
-      scaf_message->efficiency = scaf_latest_efficiency_smooth;
+   scaf_message->efficiency = scaf_latest_efficiency_smooth;
 
 #if ZMQ_VERSION_MAJOR > 2
-      zmq_sendmsg(scafd, &request, 0);
+   zmq_sendmsg(scafd, &request, 0);
 #else
-      zmq_send(scafd, &request, 0);
+   zmq_send(scafd, &request, 0);
 #endif
-      zmq_msg_close(&request);
+   zmq_msg_close(&request);
 
-      zmq_msg_t reply;
-      zmq_msg_init(&reply);
+   zmq_msg_t reply;
+   zmq_msg_init(&reply);
 #if ZMQ_VERSION_MAJOR > 2
-      zmq_recvmsg(scafd, &reply, 0);
+   zmq_recvmsg(scafd, &reply, 0);
 #else
-      zmq_recv(scafd, &reply, 0);
+   zmq_recv(scafd, &reply, 0);
 #endif
-      scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
-      assert(response.message == SCAF_DAEMON_FEEDBACK);
-      zmq_msg_close(&reply);
-      current_num_clients = response.num_clients;
-      current_threads = response.threads;
-   }
+   scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
+   assert(response.message == SCAF_DAEMON_FEEDBACK);
+   zmq_msg_close(&reply);
+   current_num_clients = response.num_clients;
+   current_threads = response.threads;
 
 #if(HAVE_LIBPAPI)
    {
