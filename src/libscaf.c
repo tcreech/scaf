@@ -118,6 +118,14 @@ static float scaf_serial_duration;
 static float scaf_section_efficiency;
 static pthread_t scaf_master_thread;
 
+// For rate-limiting communications
+// Maximum will be max_comms/per
+static double scaf_rate_limit_per;
+static double scaf_rate_limit_max_comms;
+static double scaf_rate_limit_allowance;
+static double scaf_rate_limit_last_check;
+static int scaf_skip_communication_for_section  = 0;
+
 static void* current_section_id;
 static int current_threads;
 static int current_num_clients = 1;
@@ -136,6 +144,27 @@ float lowpass(float x, float dt, float rc){
    float alpha = dt / (rc + dt);
    yp = alpha * x + (1.0-alpha) * yp;
    return yp;
+}
+
+// Return 1 if we have been communicating too quickly. Implements a token
+// bucket. Our convention will be that rate limiting is disabled if
+// scaf_rate_limit_max_comms is negative.
+static inline int scaf_communication_rate_limit(double current_time){
+   if(scaf_rate_limit_max_comms < 0)
+      return 0;
+
+   double time_passed = current_time - scaf_rate_limit_last_check;
+   scaf_rate_limit_last_check = current_time;
+   scaf_rate_limit_allowance += time_passed * (scaf_rate_limit_max_comms / scaf_rate_limit_per);
+   if(scaf_rate_limit_allowance > scaf_rate_limit_max_comms)
+      scaf_rate_limit_allowance = scaf_rate_limit_max_comms;
+   if(scaf_rate_limit_allowance < 1.0){
+      return 1; // do not allow the communication
+   }
+   else{
+      scaf_rate_limit_allowance -= 1.0;
+      return 0; // allow the communication.
+   }
 }
 
 static void* scaf_init(void **context_p);
@@ -224,6 +253,16 @@ static void* scaf_init(void **context_p){
    scaf_mypid = getpid();
    scaf_init_rtclock = rtclock();
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
+
+   // Initialize stuff for rate limiting
+   char *ratelimit = getenv("SCAF_COMM_RATE_LIMIT");
+   if(ratelimit)
+      scaf_rate_limit_max_comms = atof(ratelimit);
+   else
+      scaf_rate_limit_max_comms = -1;
+   scaf_rate_limit_per = 1.0;
+   scaf_rate_limit_allowance = scaf_rate_limit_max_comms;
+   scaf_rate_limit_last_check = 0;
 
    // We used to call experiments "training." Obey the old environment variable
    // for now.
@@ -314,41 +353,13 @@ int scaf_section_start(void* section){
       scaf_section_efficiency = 0.5;
    }
 
+   // Compute results for reporting before this section
    float scaf_serial_efficiency = 1.0 / current_threads;
    float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
    float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / scaf_latest_efficiency_duration;
    float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, SCAF_LOWPASS_TIME_CONSTANT);
 
-   // Get num threads
-   zmq_msg_t request;
-   zmq_msg_init_size(&request, sizeof(scaf_client_message));
-   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
-   scaf_message->message = SCAF_SECTION_START;
-   scaf_message->pid = scaf_mypid;
-   scaf_message->section = section;
-
-   scaf_message->efficiency = scaf_latest_efficiency_smooth;
-
-#if ZMQ_VERSION_MAJOR > 2
-   zmq_sendmsg(scafd, &request, 0);
-#else
-   zmq_send(scafd, &request, 0);
-#endif
-   zmq_msg_close(&request);
-
-   zmq_msg_t reply;
-   zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
-   zmq_recvmsg(scafd, &reply, 0);
-#else
-   zmq_recv(scafd, &reply, 0);
-#endif
-   scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
-   assert(response.message == SCAF_DAEMON_FEEDBACK);
-   zmq_msg_close(&reply);
-   current_num_clients = response.num_clients;
-   current_threads = response.threads;
-
+   // Collect data for future reporting
 #if(HAVE_LIBPAPI)
    {
       float ptime, ipc;
@@ -363,6 +374,39 @@ int scaf_section_start(void* section){
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
    }
 #endif
+
+   scaf_skip_communication_for_section = scaf_communication_rate_limit(scaf_section_start_time);
+   if(!scaf_skip_communication_for_section){
+      // Get num threads
+      zmq_msg_t request;
+      zmq_msg_init_size(&request, sizeof(scaf_client_message));
+      scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+      scaf_message->message = SCAF_SECTION_START;
+      scaf_message->pid = scaf_mypid;
+      scaf_message->section = section;
+
+      scaf_message->efficiency = scaf_latest_efficiency_smooth;
+
+#if ZMQ_VERSION_MAJOR > 2
+      zmq_sendmsg(scafd, &request, 0);
+#else
+      zmq_send(scafd, &request, 0);
+#endif
+      zmq_msg_close(&request);
+
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+#if ZMQ_VERSION_MAJOR > 2
+      zmq_recvmsg(scafd, &reply, 0);
+#else
+      zmq_recv(scafd, &reply, 0);
+#endif
+      scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
+      assert(response.message == SCAF_DAEMON_FEEDBACK);
+      zmq_msg_close(&reply);
+      current_num_clients = response.num_clients;
+      current_threads = response.threads;
+   }
 
    scaf_section_ipc = 0.0;
 
