@@ -22,6 +22,13 @@
     __typeof__ (b) _b = (b); \
     _a < _b ? _a : _b; })
 
+#ifndef likely
+#define likely(x) __builtin_expect((x),1)
+#endif
+#ifndef unlikely
+#define unlikely(x) __builtin_expect((x),0)
+#endif
+
 #if defined(__linux__)
 #define __NR_scaf_experiment_done 1337
 #endif //__linux__
