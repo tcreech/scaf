@@ -332,7 +332,7 @@ int scaf_section_start(void* section){
          current_section = scaf_add_client_section(current_section_id);
       }
 
-      if(unlikely(!did_scaf_startup)){
+      if(!did_scaf_startup){
          scafd = scaf_init(&scafd_context);
          did_scaf_startup=1;
 
@@ -341,14 +341,14 @@ int scaf_section_start(void* section){
       }
    }
 
-   if(unlikely(!scafd_available)){
+   if(!scafd_available){
       current_threads = omp_max_threads;
       return omp_max_threads;
    }
 
-   if(unlikely(current_threads < 1))
+   if(current_threads < 1)
       current_threads=1;
-   if(unlikely(scaf_section_duration <= 0.000001)){
+   if(scaf_section_duration <= 0.000001){
       scaf_section_duration = 0.01;
       scaf_section_efficiency = 0.5;
    }
@@ -366,7 +366,7 @@ int scaf_section_start(void* section){
       long long int ins;
       int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
-      if(unlikely(ret != PAPI_OK)) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
    }
 #else
    {
@@ -411,7 +411,7 @@ int scaf_section_start(void* section){
    scaf_section_ipc = 0.0;
 
 #if(HAVE_LIBPAPI)
-   if(unlikely(!current_section->experiment_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_experiments && !(scaf_lazy_experiments && current_num_clients < 2)))
+   if(!current_section->experiment_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_experiments && !(scaf_lazy_experiments && current_num_clients < 2))
 #if defined(__KNC__)
       return current_threads-4;
 #else
@@ -424,7 +424,7 @@ int scaf_section_start(void* section){
 
 void scaf_section_end(void){
 
-   if(unlikely(!scafd_available))
+   if(!scafd_available)
       return;
 
 #if(HAVE_LIBPAPI)
@@ -432,7 +432,7 @@ void scaf_section_end(void){
       float rtime, ptime, ipc;
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
-      if(unlikely(ret != PAPI_OK)) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
       scaf_section_ipc += ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
