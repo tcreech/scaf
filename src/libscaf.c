@@ -259,7 +259,7 @@ static void* scaf_init(void **context_p){
    if(ratelimit)
       scaf_rate_limit_max_comms = atof(ratelimit);
    else
-      scaf_rate_limit_max_comms = 100.0;
+      scaf_rate_limit_max_comms = 5.0;
    scaf_rate_limit_per = 1.0;
    scaf_rate_limit_allowance = scaf_rate_limit_max_comms;
    scaf_rate_limit_last_check = 0;
