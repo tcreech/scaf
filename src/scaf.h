@@ -78,11 +78,13 @@ typedef struct {
    UT_hash_handle hh;
 } scaf_client_section;
 
+// The float alignment is important for the Xeon Phi 5110p. If you're using
+// some compiler that doesn't support it it will probably be ok to remove it.
 typedef struct {
+   void* section;
+   float efficiency __attribute__((aligned(16)));
    int pid;
    enum scaf_message_purpose message;
-   void* section;
-   float efficiency;
 } scaf_client_message;
 
 typedef struct {
