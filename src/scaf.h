@@ -4,6 +4,10 @@
 #define SCAF_CONNECT_STRING "ipc:///tmp/ipc-scafd"
 //#define SCAF_CONNECT_STRING "tcp://localhost:5555"
 
+// Set default hash function to  Paul Hsieh's. Seems to do lookups slightly
+// faster on our keys.
+#define HASH_FUNCTION HASH_SFH
+
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdio.h>
