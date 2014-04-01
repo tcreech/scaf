@@ -19,6 +19,14 @@
 #include "scaf.h"
 #include "uthash.h"
 
+#ifdef HAVE_LIBHWLOC
+#include <hwloc.h>
+static hwloc_topology_t topology;
+static int num_hwloc_objs;
+static hwloc_obj_type_t part_at = HWLOC_OBJ_PU;
+static hwloc_cpuset_t client_cpuset;
+#endif
+
 static int num_online_processors(void){
    char *maxenv = getenv("OMP_NUM_THREADS");
    if(maxenv)
@@ -59,6 +67,27 @@ pthread_t referee, reaper, scoreboard, lookout;
 static pthread_rwlock_t clients_lock;
 
 static double startuptime;
+
+static void inline apply_affinity_partitioning(void){
+#ifdef HAVE_LIBHWLOC
+   RD_LOCK_CLIENTS;
+
+   unsigned current_cpu_id = 0;
+   scaf_client *current, *tmp;
+   HASH_ITER(hh, clients, current, tmp){
+      hwloc_bitmap_zero(client_cpuset);
+      hwloc_bitmap_set_range(client_cpuset, current_cpu_id, current_cpu_id + current->threads - 1);
+      assert(hwloc_bitmap_weight(client_cpuset) == current->threads);
+      int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
+      if(r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
+      printf("bound pid %d to logical cpus %d - %d.\n", current->pid, current_cpu_id, current_cpu_id + current->threads -1);
+
+      current_cpu_id += current->threads;
+   }
+
+   UNLOCK_CLIENTS;
+#endif
+}
 
 int get_scaf_controlled_pids(int** pid_list){
    RD_LOCK_CLIENTS;
@@ -411,6 +440,8 @@ void maxspeedup_referee_body(void* data){
 
       UNLOCK_CLIENTS;
 
+      apply_affinity_partitioning();
+
       usleep(REFEREE_PERIOD_US);
    }
 }
@@ -557,6 +588,18 @@ int main(int argc, char **argv){
              break;
        }
     }
+
+#ifdef HAVE_LIBHWLOC
+    hwloc_topology_init(&topology);
+    hwloc_topology_load(topology);
+    client_cpuset = hwloc_bitmap_alloc();
+    {
+       int part_depth = hwloc_get_type_depth(topology, part_at);
+       num_hwloc_objs = hwloc_get_nbobjs_by_depth(topology, part_depth);
+    }
+
+    apply_affinity_partitioning();
+#endif
 
     max_threads = num_online_processors();
     bg_utilization = proc_get_cpus_used();
