@@ -56,6 +56,11 @@ static int nobgload = 0;
 static int equipartitioning = 0;
 static int curses_interface = 0;
 static int text_interface = 0;
+#if HAVE_LIBHWLOC
+static int affinity = 1;
+#else
+static int affinity = 0;
+#endif //HAVE_LIBHWLOC
 
 static scaf_client *clients = NULL;
 
@@ -69,6 +74,8 @@ static pthread_rwlock_t clients_lock;
 static double startuptime;
 
 static void inline apply_affinity_partitioning(void){
+   if(!affinity)
+      return;
 #ifdef HAVE_LIBHWLOC
    RD_LOCK_CLIENTS;
 
@@ -79,8 +86,7 @@ static void inline apply_affinity_partitioning(void){
       hwloc_bitmap_set_range(client_cpuset, current_cpu_id, current_cpu_id + current->threads - 1);
       assert(hwloc_bitmap_weight(client_cpuset) == current->threads);
       int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
-      if(r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
-      printf("bound pid %d to logical cpus %d - %d.\n", current->pid, current_cpu_id, current_cpu_id + current->threads -1);
+      if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
 
       current_cpu_id += current->threads;
    }
@@ -561,7 +567,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqb")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqba")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -581,9 +587,12 @@ int main(int argc, char **argv){
           case 'b':
              nobgload = 1;
              break;
+          case 'a':
+             affinity = 0;
+             break;
           case 'h':
           default:
-             printf("Usage: %s [-h] [-q] [-e] [-b] [-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0]);
+             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n%s\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0], affinity?"[-a] ":"", affinity?"\t-a\tdisable affinity-based parallelism control\n":"");
              exit(1);
              break;
        }
