@@ -864,7 +864,11 @@ static void* scaf_gomp_experiment_control(void *unused){
 
 #if defined(__linux__)
     //Some opens/mmaps are safe, depending on the arguments.
+#if defined(__tilegx__)
+    if(syscall == __NR_openat){
+#else
     if(syscall == __NR_open){
+#endif //__tilegx__
       char *file = (char*)ptrace(PTRACE_PEEKUSER, expPid, ARGREG, 0);
       if(strcmp("/sys/devices/system/cpu/online", file)==0){
          //This is ok because it's always a read-only file.
