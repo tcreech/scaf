@@ -444,9 +444,16 @@ void maxspeedup_referee_body(void* data){
             }
          }
 #if defined(__KNC__)
-         unsigned mod = current->threads % 4;
-         current->threads -= mod;
-         remaining_rations += mod;
+         if(current->threads > 4){
+            unsigned mod = current->threads % 4;
+            current->threads -= mod;
+            remaining_rations += mod;
+         }else{
+            unsigned deficit = 4 - current->threads;
+            current->threads += deficit;
+            remaining_rations = remaining_rations - deficit;
+            remaining_rations = max(remaining_rations, 0);
+         }
 #endif
       }
 
