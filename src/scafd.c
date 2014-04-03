@@ -80,10 +80,16 @@ static void inline apply_affinity_partitioning(void){
    RD_LOCK_CLIENTS;
 
    unsigned current_cpu_id = 0;
+   hwloc_obj_t o = NULL;
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
       hwloc_bitmap_zero(client_cpuset);
-      hwloc_bitmap_set_range(client_cpuset, current_cpu_id, current_cpu_id + current->threads - 1);
+      int i;
+      for(i=0; i<current->threads; i++){
+         o = hwloc_get_next_obj_by_type(topology, part_at, o);
+         hwloc_bitmap_or(client_cpuset, client_cpuset, o->cpuset);
+      }
+
       assert(hwloc_bitmap_weight(client_cpuset) == current->threads);
       int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
       if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
@@ -603,8 +609,7 @@ int main(int argc, char **argv){
     hwloc_topology_load(topology);
     client_cpuset = hwloc_bitmap_alloc();
     {
-       int part_depth = hwloc_get_type_depth(topology, part_at);
-       num_hwloc_objs = hwloc_get_nbobjs_by_depth(topology, part_depth);
+       num_hwloc_objs = hwloc_get_nbobjs_by_type(topology, part_at);
     }
 
     apply_affinity_partitioning();
