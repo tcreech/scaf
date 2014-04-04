@@ -897,7 +897,12 @@ static void* scaf_gomp_experiment_control(void *unused){
           syscall != __NR_read && syscall != __NR_nanosleep &&
           syscall != __NR_write && syscall != __NR_restart_syscall &&
           syscall != __NR_mprotect && syscall != __NR_sched_getaffinity &&
-          syscall != __NR_sched_setaffinity && syscall != __NR_open &&
+          syscall != __NR_sched_setaffinity &&
+#if define(__tilegx__)
+          syscall != __NR_openat &&
+#else
+          syscall != __NR_open &&
+#endif //__tilegx__
           syscall != __NR_close && syscall != __NR_mmap &&
           syscall != __NR_fstat && syscall != __NR_munmap
         ) || foundRaW || foundUnsafeOpen){
