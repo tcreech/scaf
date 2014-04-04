@@ -898,7 +898,7 @@ static void* scaf_gomp_experiment_control(void *unused){
           syscall != __NR_write && syscall != __NR_restart_syscall &&
           syscall != __NR_mprotect && syscall != __NR_sched_getaffinity &&
           syscall != __NR_sched_setaffinity &&
-#if define(__tilegx__)
+#if defined(__tilegx__)
           syscall != __NR_openat &&
 #else
           syscall != __NR_open &&
