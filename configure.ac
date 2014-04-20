@@ -1,4 +1,4 @@
-AC_INIT([scaf], [0.1], [tcreech@umd.edu])
+AC_INIT([scaf], [m4_esyscmd_s([git describe --always --dirty --long 2> /dev/null])], [tcreech@umd.edu])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
 AC_CONFIG_HEADERS([config.h])
 AC_PROG_CC
