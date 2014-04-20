@@ -78,34 +78,6 @@ static int inline get_nlwp(pid_t pid){
 #endif
 }
 
-static void inline apply_affinity_partitioning(void){
-   if(!affinity)
-      return;
-#ifdef HAVE_LIBHWLOC
-   RD_LOCK_CLIENTS;
-
-   unsigned current_cpu_id = 0;
-   hwloc_obj_t o = NULL;
-   scaf_client *current, *tmp;
-   HASH_ITER(hh, clients, current, tmp){
-      hwloc_bitmap_zero(client_cpuset);
-      int i;
-      for(i=0; i<current->threads; i++){
-         o = hwloc_get_next_obj_by_type(topology, part_at, o);
-         hwloc_bitmap_or(client_cpuset, client_cpuset, o->cpuset);
-      }
-
-      assert(hwloc_bitmap_weight(client_cpuset) == current->threads);
-      int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
-      if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
-
-      current_cpu_id += current->threads;
-   }
-
-   UNLOCK_CLIENTS;
-#endif
-}
-
 int get_scaf_controlled_pids(int** pid_list){
    RD_LOCK_CLIENTS;
    int size = HASH_COUNT(clients);
