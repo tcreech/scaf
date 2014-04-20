@@ -598,7 +598,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqba")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqbav")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -621,8 +621,14 @@ int main(int argc, char **argv){
           case 'a':
              affinity = 0;
              break;
+          case 'v':
+             printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
+             exit(1);
+             break;
           case 'h':
           default:
+             printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
+             printf("\n");
              printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n%s\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0], affinity?"[-a] ":"", affinity?"\t-a\tdisable affinity-based parallelism control\n":"");
              exit(1);
              break;
