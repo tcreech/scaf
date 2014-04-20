@@ -73,6 +73,24 @@ static pthread_rwlock_t clients_lock;
 
 static double startuptime;
 
+static int inline get_nlwp(pid_t pid){
+#ifdef __linux__
+   int nlwp;
+   FILE *fp;
+   char statfile[128];
+   sprintf(statfile, "/proc/%d/stat\0", pid);
+   fp = fopen(statfile,"r");
+   if(!fp)
+      return 0;
+
+   assert(1==fscanf(fp,"%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %*u %*u %*d %*d %*d %*d %d 0 %*u %*u %*d %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*d %*d %*u %*u %*u %*u %*d\n",&nlwp));
+   fclose(fp);
+   return nlwp-2;
+#else
+   return 0;
+#endif
+}
+
 static void inline apply_affinity_partitioning(void){
    if(!affinity)
       return;
@@ -284,11 +302,11 @@ void delete_client(scaf_client *c){
 }
 
 void text_print_clients(void){
-   printf("%-9s%-9s%-8s%-15s%-5s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "EFF", "CHECKINS");
-   printf("%-9s%-9s%-8d%-15s%-5s%-10s\n", "all", "-", max_threads, "-", "-", "-");
+   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS");
+   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s\n", "all", "-", max_threads, "-", "-", "-", "-");
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      printf("%-9d%-9s%-8d%-15p%1.2f %-10u\n", current->pid, current->name, current->threads, current->current_section, current->metric, current->checkins);
+      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins);
    }
    printf("\n");
    fflush(stdout);
