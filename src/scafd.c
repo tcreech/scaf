@@ -555,7 +555,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqb")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqbv")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -575,8 +575,14 @@ int main(int argc, char **argv){
           case 'b':
              nobgload = 1;
              break;
+          case 'v':
+             printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
+             exit(1);
+             break;
           case 'h':
           default:
+             printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
+             printf("\n");
              printf("Usage: %s [-h] [-q] [-e] [-b] [-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0]);
              exit(1);
              break;
