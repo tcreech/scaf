@@ -104,6 +104,7 @@ static int scafd_available;
 static int scaf_disable_experiments = 0;
 static int scaf_enable_firsttouch = 0;
 static int scaf_experiment_process = 0;
+static int scaf_experiment_running = 0;
 static int scaf_lazy_experiments;
 static int scaf_mypid;
 static int omp_max_threads;
@@ -577,6 +578,7 @@ int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
    pthread_create(&(scaf_experiment_desc.control_pthread), NULL, &scaf_gomp_experiment_control, NULL);
    pthread_barrier_wait(&(scaf_experiment_desc.control_pthread_b));
    pthread_barrier_destroy(&(scaf_experiment_desc.control_pthread_b));
+   scaf_experiment_running = 1;
    return 1;
 }
 
@@ -586,25 +588,9 @@ int scaf_gomp_training_create(void (*fn) (void*), void *data){
 }
 
 void scaf_gomp_experiment_destroy(void){
-   // First of all, only experiment if necessary.
-   if(scaf_disable_experiments || !scafd_available || current_section->experiment_complete || !(current_threads>1))
+   // Only perform experiment clean-up/collection if one was started.
+   if(!scaf_experiment_running)
       return;
-
-   // Also do not experiment if we are doing lazy experiments and there is no
-   // multiprogramming right now.
-   if(scaf_lazy_experiments && current_num_clients < 2)
-      return;
-
-#if(! HAVE_LIBPAPI)
-   {
-      return;
-   }
-#endif
-
-   if(!current_section->first_touch_complete){
-      current_section->first_touch_complete = 1;
-      return;
-   }
 
 #if(! SCAF_PARALLEL_WAIT_FOR_EXPERIMENT)
    {
@@ -645,6 +631,7 @@ void scaf_gomp_experiment_destroy(void){
    current_section->experiment_ipc_speedup = ((float)current_section->experiment_threads) * current_section->experiment_ipc_eff;
    current_section->experiment_complete = 1;
    debug_print(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->experiment_threads, scaf_section_duration, current_section->experiment_serial_ipc, current_section->experiment_parallel_ipc, current_section->experiment_ipc_eff, current_section->experiment_ipc_speedup);
+   scaf_experiment_running = 0;
 }
 
 // An alias for the above.
