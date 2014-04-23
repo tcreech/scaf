@@ -293,6 +293,7 @@ void add_client(int client_pid, int threads, void* client_section){
    c->current_section = client_section;
    c->metric = 1.0;
    c->checkins = 1;
+   c->malleable = 1;
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
@@ -302,11 +303,11 @@ void delete_client(scaf_client *c){
 }
 
 void text_print_clients(void){
-   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS");
-   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s\n", "all", "-", max_threads, "-", "-", "-", "-");
+   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s%-10s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS", "MALLEABLE");
+   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s%-10s\n", "all", "-", max_threads, "-", "-", "-", "-", "-");
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins);
+      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u%-10d\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins, current->malleable);
    }
    printf("\n");
    fflush(stdout);
@@ -386,7 +387,20 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       client->checkins++;
       UNLOCK_CLIENTS;
       *num_clients_report = num_clients;
+      if(!client->malleable)
+         client_threads = max_threads;
       return client_threads;
+   }
+   else if(client_request == SCAF_NOT_MALLEABLE){
+      RW_LOCK_CLIENTS;
+      scaf_client *client = find_client(client_pid);
+      assert(client);
+      client->malleable = 0;
+      UNLOCK_CLIENTS;
+      //num_clients_report is bogus here. We don't want to spent the time to
+      //count the clients.
+      *num_clients_report = 0;
+      return 0;
    }
    else if(client_request == SCAF_FORMER_CLIENT){
       RW_LOCK_CLIENTS;
@@ -668,7 +682,9 @@ int main(int argc, char **argv){
         // Update client bookkeeping if necessary
         int num_clients;
         int threads = perform_client_request(client_message, &num_clients);
-        assert(threads > 0 || client_message->message == SCAF_FORMER_CLIENT);
+        assert(threads > 0 ||
+              client_message->message == SCAF_FORMER_CLIENT ||
+              client_message->message == SCAF_NOT_MALLEABLE);
         assert(threads < 4096);
         zmq_msg_close (&request);
 

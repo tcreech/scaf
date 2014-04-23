@@ -50,6 +50,7 @@ enum scaf_message_purpose {
    SCAF_NEW_CLIENT,
    SCAF_FORMER_CLIENT,
    SCAF_SECTION_START,
+   SCAF_NOT_MALLEABLE,
    SCAF_DAEMON_FEEDBACK,
 };
 
@@ -61,6 +62,7 @@ typedef struct {
    float metric;
    float log_factor;
    char name[SCAF_MAX_CLIENT_NAME_LEN+1];
+   int malleable;
    UT_hash_handle hh;
 } scaf_client;
 
@@ -106,6 +108,8 @@ void scaf_retire();
 int scaf_section_start(void* section);
 
 void scaf_section_end(void);
+
+void scaf_not_malleable(void);
 
 int scaf_gomp_experiment_create(void (*fn) (void*), void *data);
 void scaf_gomp_experiment_destroy(void);

@@ -302,6 +302,46 @@ static void* scaf_init(void **context_p){
    return requester;
 }
 
+void scaf_not_malleable(void){
+   // This can be known before a parallel section starts. Initialize
+   // communication with scafd if necessary.
+   if(!did_scaf_startup){
+      scafd = scaf_init(&scafd_context);
+      did_scaf_startup=1;
+
+      // scaf_connect gives a reply, but we just ignore it.
+      scaf_connect(scafd);
+   }
+
+   // send notice that we are not malleable.
+   debug_print(BOLDRED "Notifying that we are NOT malleable." RESET "\n");
+   zmq_msg_t request;
+   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+   scaf_message->message = SCAF_NOT_MALLEABLE;
+   scaf_message->pid = scaf_mypid;
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, &request, 0);
+#else
+   zmq_send(scafd, &request, 0);
+#endif
+   zmq_msg_close(&request);
+
+   zmq_msg_t reply;
+   zmq_msg_init(&reply);
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_recvmsg(scafd, &reply, 0);
+#else
+   zmq_recv(scafd, &reply, 0);
+#endif
+   scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
+   assert(response.message == SCAF_DAEMON_FEEDBACK);
+   zmq_msg_close(&reply);
+   //current_num_clients = response.num_clients;
+   //current_threads = response.threads;
+   return;
+}
+
 void scaf_retire(void){
    // If we're just an experiment (with the atexit called before the fork),
    // then don't tell anyone anything.
