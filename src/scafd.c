@@ -23,6 +23,7 @@
 #include <hwloc.h>
 static hwloc_topology_t topology;
 static int num_hwloc_objs;
+static hwloc_obj_t top_obj;
 static hwloc_obj_type_t part_at = HWLOC_OBJ_PU;
 static hwloc_cpuset_t client_cpuset;
 #endif
@@ -109,8 +110,13 @@ static void inline apply_affinity_partitioning(void){
       }
 
       assert(hwloc_bitmap_weight(client_cpuset) == current->threads);
-      int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
-      if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
+      // Only actually bind if this is a non-malleable client that should be
+      // bound to some fraction of the machine.
+      if(!current->malleable && !hwloc_bitmap_isequal(client_cpuset, top_obj->cpuset)){
+         int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
+         if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
+         printf("bound non-malleable process to part of the machine.\n");
+      }
 
       current_cpu_id += current->threads;
    }
@@ -633,9 +639,8 @@ int main(int argc, char **argv){
     hwloc_topology_init(&topology);
     hwloc_topology_load(topology);
     client_cpuset = hwloc_bitmap_alloc();
-    {
-       num_hwloc_objs = hwloc_get_nbobjs_by_type(topology, part_at);
-    }
+    num_hwloc_objs = hwloc_get_nbobjs_by_type(topology, part_at);
+    top_obj = hwloc_get_root_obj(topology);
 
     apply_affinity_partitioning();
 #endif
