@@ -356,26 +356,6 @@ void curses_print_clients(void){
    refresh();
 }
 
-int get_per_client_threads(int num_clients){
-   if(num_clients >= max_threads)
-      return 1;
-
-   if(num_clients==0)
-      return max_threads;
-
-   return max_threads / num_clients;
-}
-
-int get_extra_threads(int num_clients){
-   if(num_clients >= max_threads)
-      return 0;
-
-   if(num_clients==0)
-      return 0;
-
-   return max_threads % num_clients;
-}
-
 int perform_client_request(scaf_client_message *client_message, int *num_clients_report){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
@@ -389,7 +369,7 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
    if(client_request == SCAF_NEW_CLIENT){
       RW_LOCK_CLIENTS;
       int num_clients = HASH_COUNT(clients);
-      client_threads = get_per_client_threads(num_clients+1);
+      client_threads = max_threads;
       add_client(client_pid, client_threads, client_message->section);
       UNLOCK_CLIENTS;
       *num_clients_report = num_clients+1;
