@@ -110,9 +110,8 @@ static void inline apply_affinity_partitioning(void){
       }
 
       assert(hwloc_bitmap_weight(client_cpuset) == current->threads);
-      // Only actually bind if this is a non-malleable client that should be
-      // bound to some fraction of the machine.
-      if(!current->malleable && !hwloc_bitmap_isequal(client_cpuset, top_obj->cpuset)){
+      // Only actually bind if this is a non-malleable client.
+      if(!current->malleable){
          int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
          if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
          printf("bound non-malleable process to part of the machine.\n");
