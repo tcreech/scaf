@@ -685,9 +685,7 @@ int main(int argc, char **argv){
         // Update client bookkeeping if necessary
         int num_clients;
         int threads = perform_client_request(client_message, &num_clients);
-        assert(threads > 0 ||
-              client_message->message == SCAF_FORMER_CLIENT ||
-              client_message->message == SCAF_NOT_MALLEABLE);
+        assert(threads > 0 || client_message->message != SCAF_SECTION_START);
         assert(threads < 4096);
         zmq_msg_close (&request);
 
