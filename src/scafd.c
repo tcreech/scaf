@@ -109,7 +109,8 @@ static void inline apply_affinity_partitioning(void){
       // object for the experiment. (So long as there are others available.)
       if(!current->malleable && current->experimenting && current->threads > 1){
          o = hwloc_get_next_obj_by_type(topology, part_at, o);
-         hwloc_set_proc_cpubind(topology, current->experiment_pid, o->cpuset, HWLOC_CPUBIND_STRICT);
+         int r = hwloc_set_proc_cpubind(topology, current->experiment_pid, o->cpuset, HWLOC_CPUBIND_STRICT);
+         if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->experiment_pid);
          i++;
       }
       for(; i<current->threads; i++){
