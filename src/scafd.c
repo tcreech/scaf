@@ -103,13 +103,21 @@ static void inline apply_affinity_partitioning(void){
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
       hwloc_bitmap_zero(client_cpuset);
-      int i;
-      for(i=0; i<current->threads; i++){
+
+      int i=0;
+      // If this non-malleable process is currently experimenting, dedicate one
+      // object for the experiment. (So long as there are others available.)
+      if(!current->malleable && current->experimenting && current->threads > 1){
+         o = hwloc_get_next_obj_by_type(topology, part_at, o);
+         hwloc_set_proc_cpubind(topology, current->experiment_pid, o->cpuset, HWLOC_CPUBIND_STRICT);
+         i++;
+      }
+      for(; i<current->threads; i++){
          o = hwloc_get_next_obj_by_type(topology, part_at, o);
          hwloc_bitmap_or(client_cpuset, client_cpuset, o->cpuset);
       }
 
-      assert(hwloc_bitmap_weight(client_cpuset) == current->threads);
+      assert(hwloc_bitmap_weight(client_cpuset) == (current->experimenting?current->threads-1:current->threads));
       // Only actually bind if this is a non-malleable client.
       if(!current->malleable){
          int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
@@ -298,6 +306,7 @@ void add_client(int client_pid, int threads, void* client_section){
    c->metric = 1.0;
    c->checkins = 1;
    c->malleable = 1;
+   c->experimenting = 0;
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
@@ -307,11 +316,11 @@ void delete_client(scaf_client *c){
 }
 
 void text_print_clients(void){
-   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s%-10s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS", "MALLEABLE");
-   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s%-10s\n", "all", "-", max_threads, "-", "-", "-", "-", "-");
+   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s%-10s%-6s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS", "MALLEABLE", "EXPT");
+   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s%-10s%-6s\n", "all", "-", max_threads, "-", "-", "-", "-", "-", "-");
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u%-10d\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins, current->malleable);
+      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u%-10s%-6s\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins, current->malleable?"YES":"NO", current->experimenting?"YES":"NO");
    }
    printf("\n");
    fflush(stdout);
@@ -400,6 +409,29 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       scaf_client *client = find_client(client_pid);
       assert(client);
       client->malleable = 0;
+      UNLOCK_CLIENTS;
+      //num_clients_report is bogus here. We don't want to spent the time to
+      //count the clients.
+      *num_clients_report = 0;
+      return 0;
+   }
+   else if(client_request == SCAF_EXPT_START){
+      RW_LOCK_CLIENTS;
+      scaf_client *client = find_client(client_pid);
+      assert(client);
+      client->experimenting = 1;
+      client->experiment_pid = client_message->experiment_pid;
+      UNLOCK_CLIENTS;
+      //num_clients_report is bogus here. We don't want to spent the time to
+      //count the clients.
+      *num_clients_report = 0;
+      return 0;
+   }
+   else if(client_request == SCAF_EXPT_STOP){
+      RW_LOCK_CLIENTS;
+      scaf_client *client = find_client(client_pid);
+      assert(client);
+      client->experimenting = 0;
       UNLOCK_CLIENTS;
       //num_clients_report is bogus here. We don't want to spent the time to
       //count the clients.

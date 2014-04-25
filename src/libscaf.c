@@ -95,6 +95,8 @@ static void* scaf_gomp_experiment_control(void *unused);
 static scaf_client_experiment_description scaf_experiment_desc;
 static inline void scaf_experiment_start(void);
 static inline void scaf_experiment_end(int);
+void scaf_advise_experiment_start(void);
+void scaf_advise_experiment_stop(void);
 
 static int did_scaf_startup;
 static void *scafd;
@@ -319,6 +321,65 @@ void scaf_not_malleable(void){
    zmq_msg_init_size(&request, sizeof(scaf_client_message));
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
    scaf_message->message = SCAF_NOT_MALLEABLE;
+   scaf_message->pid = scaf_mypid;
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, &request, 0);
+#else
+   zmq_send(scafd, &request, 0);
+#endif
+   zmq_msg_close(&request);
+
+   zmq_msg_t reply;
+   zmq_msg_init(&reply);
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_recvmsg(scafd, &reply, 0);
+#else
+   zmq_recv(scafd, &reply, 0);
+#endif
+   scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
+   assert(response.message == SCAF_DAEMON_FEEDBACK);
+   zmq_msg_close(&reply);
+   //current_num_clients = response.num_clients;
+   //current_threads = response.threads;
+   return;
+}
+
+void scaf_advise_experiment_start(void){
+   debug_print(BOLDRED "Notifying scafd of experiment start." RESET "\n");
+   zmq_msg_t request;
+   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+   scaf_message->message = SCAF_EXPT_START;
+   scaf_message->pid = scaf_mypid;
+   scaf_message->experiment_pid = scaf_experiment_desc.experiment_pid;
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, &request, 0);
+#else
+   zmq_send(scafd, &request, 0);
+#endif
+   zmq_msg_close(&request);
+
+   zmq_msg_t reply;
+   zmq_msg_init(&reply);
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_recvmsg(scafd, &reply, 0);
+#else
+   zmq_recv(scafd, &reply, 0);
+#endif
+   scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
+   assert(response.message == SCAF_DAEMON_FEEDBACK);
+   zmq_msg_close(&reply);
+   //current_num_clients = response.num_clients;
+   //current_threads = response.threads;
+   return;
+}
+
+void scaf_advise_experiment_stop(void){
+   debug_print(BOLDRED "Notifying scafd of experiment stop." RESET "\n");
+   zmq_msg_t request;
+   zmq_msg_init_size(&request, sizeof(scaf_client_message));
+   scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
+   scaf_message->message = SCAF_EXPT_STOP;
    scaf_message->pid = scaf_mypid;
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
@@ -619,6 +680,8 @@ int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
    pthread_barrier_wait(&(scaf_experiment_desc.control_pthread_b));
    pthread_barrier_destroy(&(scaf_experiment_desc.control_pthread_b));
    scaf_experiment_running = 1;
+   scaf_advise_experiment_start();
+
    return 1;
 }
 
@@ -672,6 +735,7 @@ void scaf_gomp_experiment_destroy(void){
    current_section->experiment_complete = 1;
    debug_print(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->experiment_threads, scaf_section_duration, current_section->experiment_serial_ipc, current_section->experiment_parallel_ipc, current_section->experiment_ipc_eff, current_section->experiment_ipc_speedup);
    scaf_experiment_running = 0;
+   scaf_advise_experiment_stop();
 }
 
 // An alias for the above.
