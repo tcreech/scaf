@@ -120,7 +120,8 @@ static void inline apply_affinity_partitioning(void){
          hwloc_bitmap_or(client_cpuset, client_cpuset, o->cpuset);
       }
 
-      assert(hwloc_bitmap_weight(client_cpuset) == (current->experimenting?current->threads-1:current->threads));
+      assert(hwloc_bitmap_weight(client_cpuset) ==
+            ((current->experimenting && current->threads>1)?current->threads-1:current->threads));
       // Only actually bind if this is a non-malleable client.
       if(!current->malleable){
          int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
