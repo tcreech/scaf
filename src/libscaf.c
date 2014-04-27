@@ -97,6 +97,7 @@ static inline void scaf_experiment_start(void);
 static inline void scaf_experiment_end(int);
 void scaf_advise_experiment_start(void);
 void scaf_advise_experiment_stop(void);
+static int inline scaf_will_create_experiment(void);
 
 static int did_scaf_startup;
 static void *scafd;
@@ -512,14 +513,13 @@ int scaf_section_start(void* section){
 
    scaf_section_ipc = 0.0;
 
-#if(HAVE_LIBPAPI)
-   if(!current_section->experiment_complete && current_section->first_touch_complete && scafd_available && !scaf_disable_experiments && !(scaf_lazy_experiments && current_num_clients < 2))
+   if(scaf_will_create_experiment()){
 #if defined(__KNC__)
       return current_threads-4;
 #else
       return current_threads-1;
 #endif //defined(__KNC__)
-#endif
+   }
 
    return current_threads;
 }
@@ -654,9 +654,14 @@ static inline void scaf_experiment_end(int sig){
    _Exit(0);
 }
 
-int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
+// Just decide whether or not we need to and can make an experiment.
+static int inline scaf_will_create_experiment(void){
    // First of all, only experiment if necessary.
-   if(scaf_disable_experiments || !scafd_available || current_section->experiment_complete || !(current_threads>1))
+   if(scaf_disable_experiments || !scafd_available || current_section->experiment_complete)
+      return 0;
+
+   // Do not launch an experiment if we can only use one processor right now.
+   if(current_threads < 2)
       return 0;
 
    // Also do not experiment if we are doing lazy experiments and there is no
@@ -671,6 +676,14 @@ int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
 #endif
 
    if(!current_section->first_touch_complete)
+      return 0;
+
+   return 1;
+}
+
+int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
+
+   if(!scaf_will_create_experiment())
       return 0;
 
    scaf_experiment_desc.fn = fn;
