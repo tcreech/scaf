@@ -551,6 +551,18 @@ void scaf_section_end(void){
    current_section->last_ipc  = scaf_section_ipc;
    scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->experiment_serial_ipc);
 
+   // If our "parallel" section was actually run on only 1 thread, also store
+   // the results as the result of an experiment. (Even if an experiment had
+   // already been run.)
+   if(current_threads == 1){
+      current_section->experiment_threads = 1;
+      current_section->experiment_serial_ipc = scaf_section_ipc;
+      current_section->experiment_parallel_ipc = scaf_section_ipc;
+      current_section->experiment_ipc_eff = 1;
+      current_section->experiment_ipc_speedup = 1;
+      current_section->experiment_complete = 1;
+   }
+
    return;
 }
 
