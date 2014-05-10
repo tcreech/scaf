@@ -183,6 +183,12 @@ static void inline apply_affinity_partitioning(void){
       total_count++;
    }
 
+#ifdef __KNC__
+   const int affinity_for_nonmalleable_only = 1;
+#else
+   const int affinity_for_nonmalleable_only = 0;
+#endif
+
    hwloc_cpuset_t client_total_set = hwloc_bitmap_alloc();
    hwloc_cpuset_t client_work_set = hwloc_bitmap_alloc();
    hwloc_cpuset_t client_experiment_set = hwloc_bitmap_alloc();
@@ -196,12 +202,14 @@ static void inline apply_affinity_partitioning(void){
          // Only actually call the OS to change affinity if there is a change.
          if(!hwloc_bitmap_isequal(current->experiment_affinity, client_total_set)){
             if(current->experimenting)
-               hwloc_set_proc_cpubind(topology, current->experiment_pid, client_total_set, HWLOC_CPUBIND_STRICT);
+               if(!affinity_for_nonmalleable_only || !current->malleable)
+                  hwloc_set_proc_cpubind(topology, current->experiment_pid, client_total_set, HWLOC_CPUBIND_STRICT);
             hwloc_bitmap_copy(current->experiment_affinity, client_total_set);
          }
          // Only actually call the OS to change affinity if there is a change.
          if(!hwloc_bitmap_isequal(current->affinity, client_total_set)){
-            hwloc_set_proc_cpubind(topology, current->pid, client_total_set, HWLOC_CPUBIND_STRICT);
+            if(!affinity_for_nonmalleable_only || !current->malleable)
+               hwloc_set_proc_cpubind(topology, current->pid, client_total_set, HWLOC_CPUBIND_STRICT);
             hwloc_bitmap_copy(current->affinity, client_total_set);
             hwloc_bitmap_copy(current->affinity, client_total_set);
          }
@@ -235,7 +243,8 @@ static void inline apply_affinity_partitioning(void){
 
          // Only actually call the OS to change affinity if there is a change.
          if(!hwloc_bitmap_isequal(client_work_set, current->affinity)){
-            hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
+            if(!affinity_for_nonmalleable_only || !current->malleable)
+               hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
             hwloc_bitmap_copy(current->affinity, client_work_set);
 
             // If this is a non-malleable process, further reduce the process's
@@ -254,7 +263,8 @@ static void inline apply_affinity_partitioning(void){
             }
          }
          if(!hwloc_bitmap_isequal(client_experiment_set, current->experiment_affinity)){
-            hwloc_set_proc_cpubind(topology, current->experiment_pid, client_experiment_set, HWLOC_CPUBIND_STRICT);
+            if(!affinity_for_nonmalleable_only || !current->malleable)
+               hwloc_set_proc_cpubind(topology, current->experiment_pid, client_experiment_set, HWLOC_CPUBIND_STRICT);
             hwloc_bitmap_copy(current->experiment_affinity, client_experiment_set);
          }
       }else{
@@ -263,7 +273,8 @@ static void inline apply_affinity_partitioning(void){
          // the whole set. Record the experiment's affinity to the same thing
          // becuase if a new one starts it will inherit it.
          if(!hwloc_bitmap_isequal(client_work_set, current->affinity)){
-            hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
+            if(!affinity_for_nonmalleable_only || !current->malleable)
+               hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
             hwloc_bitmap_copy(current->affinity, client_work_set);
             hwloc_bitmap_copy(current->experiment_affinity, client_work_set);
 
