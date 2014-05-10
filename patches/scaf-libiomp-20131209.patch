@@ -13,7 +13,7 @@ index 4e7dec0..8e675fd 100644
  
  /* external schedule constants, duplicate enum omp_sched in omp.h in order to not include it here */
 diff --git a/src/kmp_csupport.c b/src/kmp_csupport.c
-index 0fcf09b..64801c0 100644
+index 0fcf09b..cfb9c19 100644
 --- a/src/kmp_csupport.c
 +++ b/src/kmp_csupport.c
 @@ -40,6 +40,12 @@
@@ -98,6 +98,40 @@ index 0fcf09b..64801c0 100644
      va_end( ap );
    }
  }
+@@ -1343,6 +1404,8 @@ ompc_set_dynamic( int flag )
+ 
+     __kmp_save_internal_controls( thread );
+ 
++    if(!flag && __kmp_global.g.g_dynamic_mode == dynamic_scaf)
++       scaf_not_malleable();
+     set__dynamic( thread, flag ? TRUE : FALSE );
+ }
+ 
+diff --git a/src/kmp_ftn_entry.h b/src/kmp_ftn_entry.h
+index e7827bf..431cbbf 100644
+--- a/src/kmp_ftn_entry.h
++++ b/src/kmp_ftn_entry.h
+@@ -44,6 +44,11 @@
+ 
+ #include "kmp_i18n.h"
+ 
++extern "C"
++{
++#include <scaf.h>
++}
++
+ #ifdef __cplusplus
+     extern "C" {
+ #endif // __cplusplus
+@@ -530,6 +535,8 @@ xexpand(FTN_SET_DYNAMIC)( int KMP_DEREF flag )
+         __kmp_save_internal_controls( thread );
+         set__dynamic( thread, KMP_DEREF flag ? TRUE : FALSE );
+     #endif
++        if(!(KMP_DEREF flag) && __kmp_global.g.g_dynamic_mode == dynamic_scaf)
++           scaf_not_malleable();
+ }
+ 
+ 
 diff --git a/src/kmp_runtime.c b/src/kmp_runtime.c
 index 659fe76..9145a76 100644
 --- a/src/kmp_runtime.c
@@ -158,15 +192,43 @@ index 659fe76..9145a76 100644
          // AC: If we execute teams from parallel region (on host), then teams
          //     should be created but each can only have 1 thread if nesting is disabled.
 diff --git a/src/kmp_settings.c b/src/kmp_settings.c
-index 40c0499..00788d4 100644
+index 40c0499..1dac6f9 100644
 --- a/src/kmp_settings.c
 +++ b/src/kmp_settings.c
-@@ -3357,6 +3357,9 @@ __kmp_stg_parse_kmp_dynamic_mode( char const * name, char const * value, void *
+@@ -44,6 +44,10 @@
+ #include "kmp_i18n.h"
+ #include "kmp_io.h"
+ 
++extern "C"
++{
++#include <scaf.h>
++}
+ 
+ static int __kmp_env_isDefined( char const * name );
+ static int __kmp_env_toPrint( char const * name, int flag );
+@@ -367,6 +371,8 @@ typedef struct __kmp_stg_fr_data    kmp_stg_fr_data_t;
+ typedef void ( * kmp_stg_parse_func_t )( char const * name, char const * value, void * data );
+ typedef void ( * kmp_stg_print_func_t )( kmp_str_buf_t * buffer, char const * name, void * data );
+ 
++static kmp_setting_t * __kmp_stg_find( char const * name );
++
+ struct __kmp_setting {
+     char const *         name;        // Name of setting (environment variable).
+     kmp_stg_parse_func_t parse;       // Parser function.
+@@ -3357,6 +3363,17 @@ __kmp_stg_parse_kmp_dynamic_mode( char const * name, char const * value, void *
      else if ( __kmp_str_match( "random", 1, value ) ) {
          __kmp_global.g.g_dynamic_mode = dynamic_random;
      }
 +    else if ( __kmp_str_match( "scaf", 0, value ) ) {
 +        __kmp_global.g.g_dynamic_mode = dynamic_scaf;
++        if(__kmp_stg_find("OMP_DYNAMIC")->set){
++           // If specified to "false", inform the SCAF daemon right away.
++           if(__kmp_global.g.g_dynamic == FALSE)
++              scaf_not_malleable();
++        } else {
++           // Change the default (if unspecified) to "true".
++           __kmp_global.g.g_dynamic = TRUE;
++        }
 +    }
      else {
          KMP_WARNING( StgInvalidValue, name, value );
