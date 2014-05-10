@@ -57,20 +57,6 @@ enum scaf_message_purpose {
 };
 
 typedef struct {
-   int pid;
-   int threads;
-   void* current_section;
-   unsigned checkins;
-   float metric;
-   float log_factor;
-   char name[SCAF_MAX_CLIENT_NAME_LEN+1];
-   int malleable;
-   int experimenting;
-   int experiment_pid;
-   UT_hash_handle hh;
-} scaf_client;
-
-typedef struct {
    void* section_id;
    float last_time;
    float last_ipc;
@@ -88,10 +74,10 @@ typedef struct {
 // some compiler that doesn't support it it will probably be ok to remove it.
 typedef struct {
    void* section;
-   union {
+   union message_value_t {
       float efficiency __attribute__((aligned(16)));
       int experiment_pid;
-   };
+   } message_value;
    int pid;
    enum scaf_message_purpose message;
 } scaf_client_message;

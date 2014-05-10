@@ -16,6 +16,8 @@
 #include <curses.h>
 #include <time.h>
 #include <strings.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #include "scaf.h"
 #include "uthash.h"
 
@@ -25,8 +27,26 @@ static hwloc_topology_t topology;
 static int num_hwloc_objs;
 static hwloc_obj_t top_obj;
 static hwloc_obj_type_t part_at = HWLOC_OBJ_PU;
-static hwloc_cpuset_t client_cpuset;
 #endif
+
+typedef struct {
+   int pid;
+   int threads;
+   void* current_section;
+   unsigned checkins;
+   double last_checkin_time;
+   float metric;
+   float log_factor;
+   char name[SCAF_MAX_CLIENT_NAME_LEN+1];
+   int malleable;
+   int experimenting;
+   int experiment_pid;
+#ifdef HAVE_LIBHWLOC
+   hwloc_cpuset_t affinity;
+   hwloc_cpuset_t experiment_affinity;
+#endif // HAVE_LIBHWLOC
+   UT_hash_handle hh;
+} scaf_client;
 
 static int num_online_processors(void){
    char *maxenv = getenv("OMP_NUM_THREADS");
@@ -40,9 +60,18 @@ static int num_online_processors(void){
 #include "solaris_trace_utils.h"
 #endif //__sun
 
+#if defined(__linux__)
+int get_all_threads_for_pid(pid_t pid, pid_t *thread_list, int max_num_threads);
+int linux_setpriority_wrapper(int which, int who, int prio);
+
+
+#endif //__linux__
+
 #define MAX_CLIENTS 8
 
 #define REFEREE_PERIOD_US (250000)
+
+#define NONMALLEABLE_THRESHOLD (60.0)
 
 #define SERIAL_LOG_FACTOR (1.0)
 
@@ -74,6 +103,50 @@ static pthread_rwlock_t clients_lock;
 
 static double startuptime;
 
+#ifdef __linux__
+// Linux's setpriority(2) is not POSIX-compliant and provides no way to set
+// priority for all threads in a process. This wrapper provides the proper
+// functionality. Because reading /proc/ is not atomic it is probably subject
+// to some unreliability, so this is best-effort and always returns 0.
+int linux_setpriority_wrapper(int which, int who, int prio){
+   assert(which == PRIO_PROCESS && "Only to be used with which=PRIO_PROCESS!");
+   pid_t *tidlist = malloc(sizeof(pid_t)*max_threads*2);
+   int numtids = get_all_threads_for_pid(who, tidlist, max_threads*2);
+   int i;
+   for(i=0; i<numtids; i++)
+      setpriority(PRIO_PROCESS, tidlist[i], prio);
+   free(tidlist);
+   return 0;
+}
+
+int get_all_threads_for_pid(pid_t pid, pid_t *thread_list, int max_num_threads){
+   int count = 0;
+   char taskdirpath[256];
+   sprintf(taskdirpath, "/proc/%d/task", pid);
+   DIR *taskdir = opendir(taskdirpath);
+   int name_max = pathconf("/proc", _PC_NAME_MAX);
+   if(name_max == -1)
+      name_max = 255;
+   size_t len = offsetof(struct dirent, d_name) + name_max + 1;
+   struct dirent *de = malloc(len);
+   struct dirent *p_de = de;
+   while(readdir_r(taskdir, p_de, &de) == 0 && de != NULL){
+      p_de = de;
+      if(0==strncmp(".",de->d_name,2))
+         continue;
+      if(0==strncmp("..",de->d_name,3))
+         continue;
+      if(count >= max_num_threads)
+         break;
+
+      thread_list[count++] = atoi(de->d_name);
+   }
+   free(p_de);
+   closedir(taskdir);
+   return count;
+}
+#endif //__linux__
+
 static int inline get_nlwp(pid_t pid){
 #ifdef __linux__
    int nlwp;
@@ -87,6 +160,10 @@ static int inline get_nlwp(pid_t pid){
    assert(1==fscanf(fp,"%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %*u %*u %*d %*d %*d %*d %d 0 %*u %*u %*d %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*d %*d %*u %*u %*u %*u %*d\n",&nlwp));
    fclose(fp);
    return nlwp-2;
+#elif defined(__sun)
+   pstatus_t ps = *__sol_get_proc_status(pid);
+   int nlwp = ps.pr_nlwp;
+   return nlwp-2;
 #else
    return 0;
 #endif
@@ -98,39 +175,120 @@ static void inline apply_affinity_partitioning(void){
 #ifdef HAVE_LIBHWLOC
    RD_LOCK_CLIENTS;
 
-   unsigned current_cpu_id = 0;
-   hwloc_obj_t o = NULL;
+   unsigned non_malleable_count = 0;
+   unsigned total_count = 0;
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      hwloc_bitmap_zero(client_cpuset);
-
-      int i=0;
-      // If this non-malleable process is currently experimenting, dedicate one
-      // object for the experiment. (So long as there are others available.)
-      if(current->experimenting && current->threads > 1){
-         o = hwloc_get_next_obj_by_type(topology, part_at, o);
-         if(!current->malleable){
-            int r = hwloc_set_proc_cpubind(topology, current->experiment_pid, o->cpuset, HWLOC_CPUBIND_STRICT);
-            if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->experiment_pid);
-         }
-         i++;
-      }
-      for(; i<current->threads; i++){
-         o = hwloc_get_next_obj_by_type(topology, part_at, o);
-         hwloc_bitmap_or(client_cpuset, client_cpuset, o->cpuset);
-      }
-
-      assert(hwloc_bitmap_weight(client_cpuset) ==
-            ((current->experimenting && current->threads>1)?current->threads-1:current->threads));
-      // Only actually bind if this is a non-malleable client.
-      if(!current->malleable){
-         int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
-         if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
-      }
-
-      current_cpu_id += current->threads;
+      non_malleable_count += (current->malleable ? 0 : 1);
+      total_count++;
    }
 
+   hwloc_cpuset_t client_total_set = hwloc_bitmap_alloc();
+   hwloc_cpuset_t client_work_set = hwloc_bitmap_alloc();
+   hwloc_cpuset_t client_experiment_set = hwloc_bitmap_alloc();
+
+   // If there are no non-malleable clients, then just ensure that no clients
+   // have any affinity and we are done.
+   if(non_malleable_count < 1){
+      hwloc_bitmap_copy(client_total_set, hwloc_get_root_obj(topology)->cpuset);
+
+      HASH_ITER(hh, clients, current, tmp){
+         // Only actually call the OS to change affinity if there is a change.
+         if(!hwloc_bitmap_isequal(current->experiment_affinity, client_total_set)){
+            if(current->experimenting)
+               hwloc_set_proc_cpubind(topology, current->experiment_pid, client_total_set, HWLOC_CPUBIND_STRICT);
+            hwloc_bitmap_copy(current->experiment_affinity, client_total_set);
+         }
+         // Only actually call the OS to change affinity if there is a change.
+         if(!hwloc_bitmap_isequal(current->affinity, client_total_set)){
+            hwloc_set_proc_cpubind(topology, current->pid, client_total_set, HWLOC_CPUBIND_STRICT);
+            hwloc_bitmap_copy(current->affinity, client_total_set);
+            hwloc_bitmap_copy(current->affinity, client_total_set);
+         }
+      }
+
+      // Finished! Everything is set to be scheduled anywhere on the machine.
+      goto aap_finished;
+   }
+
+   hwloc_obj_t o = NULL;
+   HASH_ITER(hh, clients, current, tmp){
+      hwloc_bitmap_zero(client_total_set);
+      hwloc_bitmap_zero(client_work_set);
+      hwloc_bitmap_zero(client_experiment_set);
+
+      int weight;
+      for(weight=0; weight < current->threads; weight++){
+         o = hwloc_get_next_obj_by_type(topology, part_at, o);
+         hwloc_bitmap_or(client_total_set, client_total_set, o->cpuset);
+      }
+      assert(weight == hwloc_bitmap_weight(client_total_set));
+
+      if(current->experimenting){
+         // If we are experimenting, do the allocation leaving one cpu for the
+         // experiment.
+         int first = hwloc_bitmap_first(client_total_set);
+         hwloc_bitmap_copy(client_work_set, client_total_set);
+         if(hwloc_bitmap_weight(client_work_set)>1)
+            hwloc_bitmap_clr(client_work_set, first);
+         hwloc_bitmap_set(client_experiment_set, first);
+
+         // Only actually call the OS to change affinity if there is a change.
+         if(!hwloc_bitmap_isequal(client_work_set, current->affinity)){
+            hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
+            hwloc_bitmap_copy(current->affinity, client_work_set);
+
+            // If this is a non-malleable process, further reduce the process's
+            // scheduling priority. On Linux in particular, this can help to
+            // convince the OS scheduler to give the malleable processes more
+            // time.
+            if(!current->malleable && total_count > 1){
+               int r;
+#ifdef __linux__
+               r = linux_setpriority_wrapper(PRIO_PROCESS, current->pid, 10);
+#else
+               r = setpriority(PRIO_PROCESS, current->pid, 10);
+#endif
+               if(r != 0)
+                  perror("setpriority on experimenting process failed: ");
+            }
+         }
+         if(!hwloc_bitmap_isequal(client_experiment_set, current->experiment_affinity)){
+            hwloc_set_proc_cpubind(topology, current->experiment_pid, client_experiment_set, HWLOC_CPUBIND_STRICT);
+            hwloc_bitmap_copy(current->experiment_affinity, client_experiment_set);
+         }
+      }else{
+         hwloc_bitmap_copy(client_work_set, client_total_set);
+         // If not experimenting, do the same thing but give the main process
+         // the whole set. Record the experiment's affinity to the same thing
+         // becuase if a new one starts it will inherit it.
+         if(!hwloc_bitmap_isequal(client_work_set, current->affinity)){
+            hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
+            hwloc_bitmap_copy(current->affinity, client_work_set);
+            hwloc_bitmap_copy(current->experiment_affinity, client_work_set);
+
+            // If this is a non-malleable process, further reduce the process's
+            // scheduling priority. On Linux in particular, this can help to
+            // convince the OS scheduler to give the malleable processes more
+            // time.
+            if(!current->malleable && total_count > 1){
+               int r;
+#ifdef __linux__
+               r = linux_setpriority_wrapper(PRIO_PROCESS, current->pid, 10);
+#else
+               r = setpriority(PRIO_PROCESS, current->pid, 10);
+#endif
+               if(r != 0)
+                  perror("setpriority on non-experimenting process failed: ");
+            }
+         }
+      }
+   }
+
+aap_finished:
+   hwloc_bitmap_free(client_total_set);
+   hwloc_bitmap_free(client_work_set);
+   hwloc_bitmap_free(client_experiment_set);
    UNLOCK_CLIENTS;
 #endif
 }
@@ -196,8 +354,14 @@ float proc_get_cpus_used(void){
 
       DIR* procroot;
       procroot = opendir("/proc");
-      struct dirent *procdir;
-      while((procdir = readdir(procroot))){
+      int name_max = pathconf("/proc", _PC_NAME_MAX);
+      if(name_max == -1)
+         name_max = 255;
+      size_t len = offsetof(struct dirent, d_name) + name_max + 1;
+      struct dirent *procdir = malloc(len);
+      struct dirent *p_procdir = procdir;
+      while(readdir_r(procroot, p_procdir, &procdir) == 0 && procdir != NULL){
+         p_procdir = procdir;
          int procdir_pid = atoi(procdir->d_name);
          if(procdir_pid == 0)
             continue;
@@ -238,8 +402,10 @@ float proc_get_cpus_used(void){
          }
       }
       closedir(procroot);
+      free(p_procdir);
       if(z!=1){
          sleep(1);
+         free(pid_list);
          list_size = get_scaf_controlled_pids(&pid_list);
       }
    }
@@ -297,7 +463,8 @@ void get_name_from_pid(int pid, char *buf){
 #endif //__linux__
 #if defined(__sun)
    psinfo_t pi = *__sol_get_proc_info(pid);
-   strncpy(buf, pi.pr_fname, PRFNSZ);
+   size_t namelen = strnlen(pi.pr_fname, MIN(PRFNSZ, SCAF_MAX_CLIENT_NAME_LEN));
+   strncpy(buf, pi.pr_fname, namelen);
 #endif //__sun
 }
 
@@ -309,22 +476,32 @@ void add_client(int client_pid, int threads, void* client_section){
    c->current_section = client_section;
    c->metric = 1.0;
    c->checkins = 1;
+   c->last_checkin_time = rtclock();
    c->malleable = 1;
    c->experimenting = 0;
+#ifdef HAVE_LIBHWLOC
+   c->affinity = hwloc_bitmap_alloc_full();
+   c->experiment_affinity = hwloc_bitmap_alloc_full();
+#endif //HAVE_LIBHWLOC
+
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
 
 void delete_client(scaf_client *c){
+#ifdef HAVE_LIBHWLOC
+   hwloc_bitmap_free(c->affinity);
+   hwloc_bitmap_free(c->experiment_affinity);
+#endif //HAVE_LIBHWLOC
    HASH_DEL(clients, c);
 }
 
 void text_print_clients(void){
-   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s%-10s%-6s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS", "MALLEABLE", "EXPT");
-   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s%-10s%-6s\n", "all", "-", max_threads, "-", "-", "-", "-", "-", "-");
+   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s%-10s%-6s%-9s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS", "MALLEABLE", "EXPT", "LASTSEEN");
+   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s%-10s%-6s%-9s\n", "all", "-", max_threads, "-", "-", "-", "-", "-", "-", "0");
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u%-10s%-6s\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins, current->malleable?"YES":"NO", current->experimenting?"YES":"NO");
+      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u%-10s%-6s%-9f\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins, current->malleable?"YES":"NO", current->experimenting?"YES":"NO", rtclock()-current->last_checkin_time);
    }
    printf("\n");
    fflush(stdout);
@@ -378,7 +555,7 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
-   float client_metric = client_message->efficiency;
+   float client_metric = client_message->message_value.efficiency;
 
    if(client_metric == 0.0)
       client_metric += 0.1;
@@ -402,6 +579,7 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       client->metric = client_metric;
       client_threads = client->threads;
       client->checkins++;
+      client->last_checkin_time = rtclock();
       UNLOCK_CLIENTS;
       *num_clients_report = num_clients;
       if(!client->malleable)
@@ -424,7 +602,7 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       scaf_client *client = find_client(client_pid);
       assert(client);
       client->experimenting = 1;
-      client->experiment_pid = client_message->experiment_pid;
+      client->experiment_pid = client_message->message_value.experiment_pid;
       UNLOCK_CLIENTS;
       //num_clients_report is bogus here. We don't want to spent the time to
       //count the clients.
@@ -541,6 +719,8 @@ void equi_referee_body(void* data){
       }
       UNLOCK_CLIENTS;
 
+      apply_affinity_partitioning();
+
       usleep(REFEREE_PERIOD_US);
    }
 }
@@ -624,8 +804,27 @@ void reaper_body(void* data){
 
 void lookout_body(void* data){
    while(1){
-      // Just keep this global up to date.
+      // Just keep this global up to date. This has a built-in 1s sleep.
       bg_utilization = proc_get_cpus_used();
+
+      // Also check if there are any processes that are not responsive. They
+      // may be non-malleable, or malleable and very long-running.
+      double now = rtclock();
+      RW_LOCK_CLIENTS;
+      scaf_client *current, *tmp;
+      HASH_ITER(hh, clients, current, tmp){
+         if(!current->malleable)
+            continue;
+         if(now - current->last_checkin_time > NONMALLEABLE_THRESHOLD){
+            // This client has not been talking to us in a long time, but is
+            // not dead. Mark it as effectively non-malleable.
+            if(text_interface)
+               printf("Note: client %d (%s) has not talked to us in a while. Marking it non-malleable.\n",
+                     current->pid, current->name);
+            current->malleable = 0;
+         }
+      }
+      UNLOCK_CLIENTS;
    }
 }
 
@@ -672,7 +871,6 @@ int main(int argc, char **argv){
 #ifdef HAVE_LIBHWLOC
     hwloc_topology_init(&topology);
     hwloc_topology_load(topology);
-    client_cpuset = hwloc_bitmap_alloc();
     num_hwloc_objs = hwloc_get_nbobjs_by_type(topology, part_at);
     top_obj = hwloc_get_root_obj(topology);
 

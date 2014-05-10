@@ -112,6 +112,7 @@ static int scaf_lazy_experiments;
 static int scaf_mypid;
 static int omp_max_threads;
 static int scaf_nullfd;
+static int notified_not_malleable = 0;
 
 static double scaf_init_rtclock;
 static float scaf_section_duration;
@@ -295,8 +296,8 @@ static void* scaf_init(void **context_p){
    *context_p = context;
    void *requester = zmq_socket (context, ZMQ_REQ);
 #if HAVE_LIBPAPI
-   PAPI_thread_init((unsigned long (*)(void) )pthread_self);
    int initval = PAPI_library_init(PAPI_VER_CURRENT);
+   PAPI_thread_init((unsigned long (*)(void) )pthread_self);
    assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
    assert(PAPI_multiplex_init() == PAPI_OK);
 #endif
@@ -340,8 +341,9 @@ void scaf_not_malleable(void){
    scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
    assert(response.message == SCAF_DAEMON_FEEDBACK);
    zmq_msg_close(&reply);
-   //current_num_clients = response.num_clients;
-   //current_threads = response.threads;
+
+   notified_not_malleable = 1;
+
    return;
 }
 
@@ -352,7 +354,7 @@ void scaf_advise_experiment_start(void){
    scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
    scaf_message->message = SCAF_EXPT_START;
    scaf_message->pid = scaf_mypid;
-   scaf_message->experiment_pid = scaf_experiment_desc.experiment_pid;
+   scaf_message->message_value.experiment_pid = scaf_experiment_desc.experiment_pid;
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &request, 0);
 #else
@@ -469,7 +471,7 @@ int scaf_section_start(void* section){
       long long int ins;
       int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
-      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
    }
 #else
    {
@@ -488,7 +490,7 @@ int scaf_section_start(void* section){
       scaf_message->pid = scaf_mypid;
       scaf_message->section = section;
 
-      scaf_message->efficiency = scaf_latest_efficiency_smooth;
+      scaf_message->message_value.efficiency = scaf_latest_efficiency_smooth;
 
 #if ZMQ_VERSION_MAJOR > 2
       zmq_sendmsg(scafd, &request, 0);
@@ -534,7 +536,7 @@ void scaf_section_end(void){
       float rtime, ptime, ipc;
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
-      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
       scaf_section_ipc += ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
@@ -546,6 +548,9 @@ void scaf_section_end(void){
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
    }
 #endif
+
+   if(notified_not_malleable)
+      scaf_section_ipc = (scaf_section_ipc * omp_max_threads) / current_threads;
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
@@ -579,7 +584,7 @@ static inline void scaf_experiment_start(void){
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
       scaf_section_start_time = rtime;
-      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
    }
 #else
    {
@@ -625,7 +630,7 @@ static inline void scaf_experiment_end(int sig){
       float rtime, ptime, ipc;
       long long int ins;
       int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
-      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%d)" RESET "\n", ret);
+      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
       scaf_section_ipc = ipc;
       scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
@@ -789,8 +794,6 @@ static void* scaf_gomp_experiment_control(void *unused){
   if(expPid==0){
     // Note that we are an experiment process.
     scaf_experiment_process = 1;
-    // Put ourselves in the parent's process group.
-    setpgid(0, scaf_mypid);
     // Start up our timing stuff with SCAF.
     scaf_experiment_start();
 
