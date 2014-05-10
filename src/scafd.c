@@ -19,6 +19,15 @@
 #include "scaf.h"
 #include "uthash.h"
 
+#ifdef HAVE_LIBHWLOC
+#include <hwloc.h>
+static hwloc_topology_t topology;
+static int num_hwloc_objs;
+static hwloc_obj_t top_obj;
+static hwloc_obj_type_t part_at = HWLOC_OBJ_PU;
+static hwloc_cpuset_t client_cpuset;
+#endif
+
 static int num_online_processors(void){
    char *maxenv = getenv("OMP_NUM_THREADS");
    if(maxenv)
@@ -48,6 +57,11 @@ static int nobgload = 0;
 static int equipartitioning = 0;
 static int curses_interface = 0;
 static int text_interface = 0;
+#if HAVE_LIBHWLOC
+static int affinity = 1;
+#else
+static int affinity = 0;
+#endif //HAVE_LIBHWLOC
 
 static scaf_client *clients = NULL;
 
@@ -75,6 +89,49 @@ static int inline get_nlwp(pid_t pid){
    return nlwp-2;
 #else
    return 0;
+#endif
+}
+
+static void inline apply_affinity_partitioning(void){
+   if(!affinity)
+      return;
+#ifdef HAVE_LIBHWLOC
+   RD_LOCK_CLIENTS;
+
+   unsigned current_cpu_id = 0;
+   hwloc_obj_t o = NULL;
+   scaf_client *current, *tmp;
+   HASH_ITER(hh, clients, current, tmp){
+      hwloc_bitmap_zero(client_cpuset);
+
+      int i=0;
+      // If this non-malleable process is currently experimenting, dedicate one
+      // object for the experiment. (So long as there are others available.)
+      if(current->experimenting && current->threads > 1){
+         o = hwloc_get_next_obj_by_type(topology, part_at, o);
+         if(!current->malleable){
+            int r = hwloc_set_proc_cpubind(topology, current->experiment_pid, o->cpuset, HWLOC_CPUBIND_STRICT);
+            if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->experiment_pid);
+         }
+         i++;
+      }
+      for(; i<current->threads; i++){
+         o = hwloc_get_next_obj_by_type(topology, part_at, o);
+         hwloc_bitmap_or(client_cpuset, client_cpuset, o->cpuset);
+      }
+
+      assert(hwloc_bitmap_weight(client_cpuset) ==
+            ((current->experimenting && current->threads>1)?current->threads-1:current->threads));
+      // Only actually bind if this is a non-malleable client.
+      if(!current->malleable){
+         int r = hwloc_set_proc_cpubind(topology, current->pid, client_cpuset, HWLOC_CPUBIND_STRICT);
+         if(text_interface && r != 0) printf("Warning: failed to bind pid %d. Is it gone?\n", current->pid);
+      }
+
+      current_cpu_id += current->threads;
+   }
+
+   UNLOCK_CLIENTS;
 #endif
 }
 
@@ -252,6 +309,8 @@ void add_client(int client_pid, int threads, void* client_section){
    c->current_section = client_section;
    c->metric = 1.0;
    c->checkins = 1;
+   c->malleable = 1;
+   c->experimenting = 0;
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
 }
@@ -261,11 +320,11 @@ void delete_client(scaf_client *c){
 }
 
 void text_print_clients(void){
-   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS");
-   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s\n", "all", "-", max_threads, "-", "-", "-", "-");
+   printf("%-9s%-9s%-8s%-8s%-15s%-5s%-10s%-10s%-6s\n", "PID", "NAME", "THREADS", "NLWP", "SECTION", "EFF", "CHECKINS", "MALLEABLE", "EXPT");
+   printf("%-9s%-9s%-8d%-8s%-15s%-5s%-10s%-10s%-6s\n", "all", "-", max_threads, "-", "-", "-", "-", "-", "-");
    scaf_client *current, *tmp;
    HASH_ITER(hh, clients, current, tmp){
-      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins);
+      printf("%-9d%-9s%-8d%-8d%-15p%1.2f %-10u%-10s%-6s\n", current->pid, current->name, current->threads, get_nlwp(current->pid), current->current_section, current->metric, current->checkins, current->malleable?"YES":"NO", current->experimenting?"YES":"NO");
    }
    printf("\n");
    fflush(stdout);
@@ -345,7 +404,43 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       client->checkins++;
       UNLOCK_CLIENTS;
       *num_clients_report = num_clients;
+      if(!client->malleable)
+         client_threads = max_threads;
       return client_threads;
+   }
+   else if(client_request == SCAF_NOT_MALLEABLE){
+      RW_LOCK_CLIENTS;
+      scaf_client *client = find_client(client_pid);
+      assert(client);
+      client->malleable = 0;
+      UNLOCK_CLIENTS;
+      //num_clients_report is bogus here. We don't want to spent the time to
+      //count the clients.
+      *num_clients_report = 0;
+      return 0;
+   }
+   else if(client_request == SCAF_EXPT_START){
+      RW_LOCK_CLIENTS;
+      scaf_client *client = find_client(client_pid);
+      assert(client);
+      client->experimenting = 1;
+      client->experiment_pid = client_message->experiment_pid;
+      UNLOCK_CLIENTS;
+      //num_clients_report is bogus here. We don't want to spent the time to
+      //count the clients.
+      *num_clients_report = 0;
+      return 0;
+   }
+   else if(client_request == SCAF_EXPT_STOP){
+      RW_LOCK_CLIENTS;
+      scaf_client *client = find_client(client_pid);
+      assert(client);
+      client->experimenting = 0;
+      UNLOCK_CLIENTS;
+      //num_clients_report is bogus here. We don't want to spent the time to
+      //count the clients.
+      *num_clients_report = 0;
+      return 0;
    }
    else if(client_request == SCAF_FORMER_CLIENT){
       RW_LOCK_CLIENTS;
@@ -415,6 +510,8 @@ void maxspeedup_referee_body(void* data){
       }
 
       UNLOCK_CLIENTS;
+
+      apply_affinity_partitioning();
 
       usleep(REFEREE_PERIOD_US);
    }
@@ -535,7 +632,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqbv")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqbav")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -555,6 +652,9 @@ int main(int argc, char **argv){
           case 'b':
              nobgload = 1;
              break;
+          case 'a':
+             affinity = 0;
+             break;
           case 'v':
              printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
              exit(1);
@@ -563,11 +663,21 @@ int main(int argc, char **argv){
           default:
              printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
              printf("\n");
-             printf("Usage: %s [-h] [-q] [-e] [-b] [-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0]);
+             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n%s\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0], affinity?"[-a] ":"", affinity?"\t-a\tdisable affinity-based parallelism control\n":"");
              exit(1);
              break;
        }
     }
+
+#ifdef HAVE_LIBHWLOC
+    hwloc_topology_init(&topology);
+    hwloc_topology_load(topology);
+    client_cpuset = hwloc_bitmap_alloc();
+    num_hwloc_objs = hwloc_get_nbobjs_by_type(topology, part_at);
+    top_obj = hwloc_get_root_obj(topology);
+
+    apply_affinity_partitioning();
+#endif
 
     max_threads = num_online_processors();
     bg_utilization = proc_get_cpus_used();
@@ -611,7 +721,7 @@ int main(int argc, char **argv){
         // Update client bookkeeping if necessary
         int num_clients;
         int threads = perform_client_request(client_message, &num_clients);
-        assert(threads > 0 || client_message->message == SCAF_FORMER_CLIENT);
+        assert(threads > 0 || client_message->message != SCAF_SECTION_START);
         assert(threads < 4096);
         zmq_msg_close (&request);
 

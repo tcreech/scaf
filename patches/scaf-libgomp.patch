@@ -1,15 +1,59 @@
---- gcc-4.4.5.orig/libgomp/parallel.c	2009-04-09 19:23:07.000000000 -0400
-+++ gcc-4.4.5/libgomp/parallel.c	2012-04-23 12:59:07.000000000 -0400
+diff --git a/libgomp/env.c b/libgomp/env.c
+index 92fa8c3..2c01cbb 100644
+--- a/libgomp/env.c
++++ b/libgomp/env.c
+@@ -45,6 +45,8 @@
+ #include <limits.h>
+ #include <errno.h>
+ 
++#include <scaf.h>
++
+ #ifndef HAVE_STRTOULL
+ # define strtoull(ptr, eptr, base) strtoul (ptr, eptr, base)
+ #endif
+@@ -53,7 +55,7 @@ struct gomp_task_icv gomp_global_icv = {
+   .nthreads_var = 1,
+   .run_sched_var = GFS_DYNAMIC,
+   .run_sched_modifier = 1,
+-  .dyn_var = false,
++  .dyn_var = true,
+   .nest_var = false
+ };
+ 
+@@ -481,6 +483,9 @@ initialize_env (void)
+ 
+   parse_schedule ();
+   parse_boolean ("OMP_DYNAMIC", &gomp_global_icv.dyn_var);
++  if(gomp_global_icv.dyn_var == false){
++     scaf_not_malleable();
++  }
+   parse_boolean ("OMP_NESTED", &gomp_global_icv.nest_var);
+   parse_unsigned_long ("OMP_MAX_ACTIVE_LEVELS", &gomp_max_active_levels_var,
+ 		       true);
+@@ -563,6 +568,9 @@ omp_set_dynamic (int val)
+ {
+   struct gomp_task_icv *icv = gomp_icv (true);
+   icv->dyn_var = val;
++  if(icv->dyn_var == false){
++     scaf_not_malleable();
++  }
+ }
+ 
+ int
+diff --git a/libgomp/parallel.c b/libgomp/parallel.c
+index c0966df..14d7e95 100644
+--- a/libgomp/parallel.c
++++ b/libgomp/parallel.c
 @@ -26,7 +26,7 @@
-
+ 
  #include "libgomp.h"
  #include <limits.h>
 -
 +#include <scaf.h>
-
+ 
  /* Determine the number of threads to be launched for a PARALLEL construct.
     This algorithm is explicitly described in OpenMP 3.0 section 2.4.1.
-@@ -104,7 +104,17 @@
+@@ -104,7 +104,17 @@ gomp_resolve_num_threads (unsigned specified, unsigned count)
  void
  GOMP_parallel_start (void (*fn) (void *), void *data, unsigned num_threads)
  {
@@ -27,12 +71,13 @@
 +
    gomp_team_start (fn, data, num_threads, gomp_new_team (num_threads));
  }
-
-@@ -127,6 +137,8 @@
-        }
+ 
+@@ -128,6 +138,8 @@ GOMP_parallel_end (void)
+ 	}
      }
    gomp_team_end ();
 +  scaf_section_end();
 +  scaf_gomp_training_destroy();
  }
-
+ 
+ 

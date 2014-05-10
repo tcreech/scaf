@@ -50,7 +50,10 @@ enum scaf_message_purpose {
    SCAF_NEW_CLIENT,
    SCAF_FORMER_CLIENT,
    SCAF_SECTION_START,
+   SCAF_NOT_MALLEABLE,
    SCAF_DAEMON_FEEDBACK,
+   SCAF_EXPT_START,
+   SCAF_EXPT_STOP,
 };
 
 typedef struct {
@@ -61,6 +64,9 @@ typedef struct {
    float metric;
    float log_factor;
    char name[SCAF_MAX_CLIENT_NAME_LEN+1];
+   int malleable;
+   int experimenting;
+   int experiment_pid;
    UT_hash_handle hh;
 } scaf_client;
 
@@ -82,7 +88,10 @@ typedef struct {
 // some compiler that doesn't support it it will probably be ok to remove it.
 typedef struct {
    void* section;
-   float efficiency __attribute__((aligned(16)));
+   union {
+      float efficiency __attribute__((aligned(16)));
+      int experiment_pid;
+   };
    int pid;
    enum scaf_message_purpose message;
 } scaf_client_message;
@@ -106,6 +115,8 @@ void scaf_retire();
 int scaf_section_start(void* section);
 
 void scaf_section_end(void);
+
+void scaf_not_malleable(void);
 
 int scaf_gomp_experiment_create(void (*fn) (void*), void *data);
 void scaf_gomp_experiment_destroy(void);
