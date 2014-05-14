@@ -53,7 +53,7 @@ static int num_online_processors(void){
    if(maxenv)
       return atoi(maxenv);
    else
-      return sysconf(_SC_NPROCESSORS_ONLN);
+      return scaf_get_num_cpus();
 }
 
 #if defined(__sun)

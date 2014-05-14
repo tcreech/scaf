@@ -9,12 +9,6 @@
 #include <fcntl.h>
 #include <time.h>
 #include <zmq.h>
-#if defined(__KNC__)
-int omp_get_num_threads(void);
-int omp_get_max_threads(void);
-#else
-#include <omp.h>
-#endif //defined(__KNC__)
 #include "scaf.h"
 #if(HAVE_LIBPAPI)
 #include <papi.h>
@@ -110,7 +104,7 @@ static int scaf_experiment_process = 0;
 static int scaf_experiment_running = 0;
 static int scaf_lazy_experiments;
 static int scaf_mypid;
-static int omp_max_threads;
+static int scaf_num_online_hardware_threads;
 static int scaf_nullfd;
 static int notified_not_malleable = 0;
 
@@ -268,9 +262,8 @@ static int scaf_connect(void *scafd){
    } else {
       // No response.
       scafd_available = 0;
-      omp_max_threads = omp_get_max_threads();
       always_print(RED "WARNING: This SCAF client could not communicate with scafd." RESET "\n");
-      return omp_max_threads;
+      return scaf_num_online_hardware_threads;
    }
 }
 
@@ -279,6 +272,8 @@ static void* scaf_init(void **context_p){
    scaf_mypid = getpid();
    scaf_init_rtclock = rtclock();
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
+
+   scaf_num_online_hardware_threads = scaf_get_num_cpus();
 
    // Initialize stuff for rate limiting
    char *ratelimit = getenv("SCAF_COMM_RATE_LIMIT");
@@ -469,8 +464,8 @@ int scaf_section_start(void* section){
    }
 
    if(!scafd_available){
-      current_threads = omp_max_threads;
-      return omp_max_threads;
+      current_threads = scaf_num_online_hardware_threads;
+      return scaf_num_online_hardware_threads;
    }
 
    if(current_threads < 1)
@@ -575,7 +570,7 @@ void scaf_section_end(void){
 #endif
 
    if(notified_not_malleable)
-      scaf_section_ipc = (scaf_section_ipc * omp_max_threads) / current_threads;
+      scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) / current_threads;
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
