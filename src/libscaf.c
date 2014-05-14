@@ -555,6 +555,7 @@ void scaf_section_end(void){
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
    scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->experiment_serial_ipc);
+   debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads);
 
    // If our "parallel" section was actually run on only 1 thread, also store
    // the results as the result of an experiment. (Even if an experiment had
