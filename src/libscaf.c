@@ -533,7 +533,7 @@ int scaf_section_start(void* section){
 
    scaf_section_ipc = 0.0;
 
-   if(scaf_will_create_experiment()){
+   if(scaf_will_create_experiment() && !notified_not_malleable){
 #if defined(__KNC__)
       return current_threads-4;
 #else
