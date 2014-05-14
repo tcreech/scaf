@@ -593,8 +593,6 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       client->last_checkin_time = rtclock();
       UNLOCK_CLIENTS;
       *num_clients_report = num_clients;
-      if(!client->malleable)
-         client_threads = max_threads;
       return client_threads;
    }
    else if(client_request == SCAF_NOT_MALLEABLE){

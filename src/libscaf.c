@@ -388,8 +388,6 @@ void scaf_advise_experiment_start(void){
    scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
    assert(response.message == SCAF_DAEMON_FEEDBACK);
    zmq_msg_close(&reply);
-   //current_num_clients = response.num_clients;
-   //current_threads = response.threads;
    return;
 }
 
@@ -417,8 +415,6 @@ void scaf_advise_experiment_stop(void){
    scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
    assert(response.message == SCAF_DAEMON_FEEDBACK);
    zmq_msg_close(&reply);
-   //current_num_clients = response.num_clients;
-   //current_threads = response.threads;
    return;
 }
 
@@ -533,7 +529,10 @@ int scaf_section_start(void* section){
 
    scaf_section_ipc = 0.0;
 
-   if(scaf_will_create_experiment() && !notified_not_malleable){
+   if(notified_not_malleable)
+      return scaf_num_online_hardware_threads;
+
+   if(scaf_will_create_experiment()){
 #if defined(__KNC__)
       return current_threads-4;
 #else
@@ -580,7 +579,7 @@ void scaf_section_end(void){
    // If our "parallel" section was actually run on only 1 thread, also store
    // the results as the result of an experiment. (Even if an experiment had
    // already been run.)
-   if(current_threads == 1){
+   if(current_threads == 1 && !notified_not_malleable){
       current_section->experiment_threads = 1;
       current_section->experiment_serial_ipc = scaf_section_ipc;
       current_section->experiment_parallel_ipc = scaf_section_ipc;
