@@ -116,10 +116,14 @@ static int notified_not_malleable = 0;
 
 static double scaf_init_rtclock;
 static float scaf_section_duration;
+static float scaf_section_pduration;
 static float scaf_section_ipc;
 static float scaf_section_start_time;
 static float scaf_section_end_time;
+static float scaf_section_start_ptime;
+static float scaf_section_end_ptime;
 static float scaf_serial_duration;
+static float scaf_serial_pduration;
 static float scaf_section_efficiency;
 static pthread_t scaf_master_thread;
 
@@ -149,6 +153,23 @@ float lowpass(float x, float dt, float rc){
    float alpha = dt / (rc + dt);
    yp = alpha * x + (1.0-alpha) * yp;
    return yp;
+}
+
+// PAPI's default/only granularity is thread granularity. For example, if the
+// OS schedules our client to run for 0.5s and then schedules other things for
+// another 0.5s before we ask it for measurements, PAPI will report only the
+// achieved counter rates for the 0.5s that the client ran. Since we are
+// effecting space-sharing, we adjust this result to get the effective rate
+// assuming that a CPU was dedicated to the client. In other words, adjust the
+// effective rate as if it was 0 when the client was not being run.
+static inline float get_dedicated_rate(float rtime, float ptime, float rate){
+   if(rtime < ptime){
+      // Assume this is a small error resulting in ptime > rtime, and just
+      // return as if they are equal.
+      return rate;
+   }
+   // The arithmetic mean is appropriate here.
+   return rate * (ptime / rtime);
 }
 
 // Return 1 if we have been communicating too quickly. Implements a token
@@ -426,6 +447,7 @@ void scaf_retire(void){
    zmq_msg_close(&request);
    zmq_close (scafd);
    zmq_term (scafd_context);
+
    return;
 }
 
@@ -467,10 +489,11 @@ int scaf_section_start(void* section){
    // Collect data for future reporting
 #if(HAVE_LIBPAPI)
    {
-      float ptime, ipc;
+      float ipc;
       long long int ins;
-      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &scaf_section_start_ptime, &ins, &ipc);
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
+      scaf_serial_pduration = scaf_section_start_ptime - scaf_section_end_ptime;
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
    }
 #else
@@ -535,11 +558,13 @@ void scaf_section_end(void){
    {
       float rtime, ptime, ipc;
       long long int ins;
-      int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &scaf_section_end_ptime, &ins, &ipc);
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
-      scaf_section_ipc += ipc;
-      scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
+      scaf_section_pduration = (scaf_section_end_ptime - scaf_section_start_ptime);
+      float oldipc = ipc;
+      ipc = get_dedicated_rate(scaf_section_duration, scaf_section_pduration, ipc);
+      scaf_section_ipc += ipc;
    }
 #else
    {
@@ -577,14 +602,16 @@ static inline void scaf_experiment_start(void){
 #if(HAVE_LIBPAPI)
    {
       // Begin gathering information with PAPI.
+      PAPI_shutdown();
       int initval = PAPI_library_init(PAPI_VER_CURRENT);
+      PAPI_thread_init((unsigned long (*)(void) )pthread_self);
       assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
       assert(PAPI_multiplex_init() == PAPI_OK);
 
-      float rtime, ptime, ipc;
+      float ipc;
       long long int ins;
-      int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
-      scaf_section_start_time = rtime;
+      PAPI_HL_MEASURE(&scaf_section_start_time, &scaf_section_start_ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &scaf_section_start_ptime, &ins, &ipc);
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
    }
 #else
@@ -628,13 +655,15 @@ static inline void scaf_experiment_end(int sig){
 #if(HAVE_LIBPAPI)
    {
       // Get the results from PAPI.
-      float rtime, ptime, ipc;
+      float ipc;
       long long int ins;
-      int ret = PAPI_HL_MEASURE(&rtime, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &scaf_section_end_ptime, &ins, &ipc);
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
-      scaf_section_ipc = ipc;
-      scaf_section_end_time = rtime;
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
+      scaf_section_pduration = (scaf_section_end_ptime - scaf_section_start_ptime);
+      float oldipc = ipc;
+      ipc = get_dedicated_rate(scaf_section_duration, scaf_section_pduration, ipc);
+      scaf_section_ipc = ipc;
    }
 #else
    {
