@@ -257,6 +257,7 @@ static int scaf_connect(void *scafd){
       // few seconds.
       atexit(scaf_retire);
 
+      scaf_num_online_hardware_threads = response.threads;
       current_num_clients = response.num_clients;
       return response.threads;
    } else {

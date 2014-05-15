@@ -579,7 +579,7 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       add_client(client_pid, client_threads, client_message->section);
       UNLOCK_CLIENTS;
       *num_clients_report = num_clients+1;
-      return client_threads;
+      return max_threads;
    }
    else if(client_request == SCAF_SECTION_START){
       RW_LOCK_CLIENTS;
