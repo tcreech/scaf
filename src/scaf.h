@@ -111,7 +111,7 @@ void scaf_gomp_experiment_destroy(void);
 int scaf_gomp_training_create(void (*fn) (void*), void *data);
 void scaf_gomp_training_destroy(void);
 
-static inline scaf_get_num_cpus(void){
+static inline int scaf_get_num_cpus(void){
    return sysconf(_SC_NPROCESSORS_ONLN);
 }
 
