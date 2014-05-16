@@ -161,8 +161,10 @@ static int inline get_nlwp(pid_t pid){
    fclose(fp);
    return nlwp-2;
 #elif defined(__sun)
-   pstatus_t ps = *__sol_get_proc_status(pid);
-   int nlwp = ps.pr_nlwp;
+   pstatus_t *ps = __sol_get_proc_status(pid);
+   if(ps == NULL)
+      return 0;
+   int nlwp = ps->pr_nlwp;
    return nlwp-2;
 #else
    return 0;
