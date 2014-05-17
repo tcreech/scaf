@@ -71,7 +71,7 @@ int linux_setpriority_wrapper(int which, int who, int prio);
 
 #define REFEREE_PERIOD_US (250000)
 
-#define NONMALLEABLE_THRESHOLD (60.0)
+#define UNRESPONSIVE_THRESHOLD (10.0)
 
 #define SERIAL_LOG_FACTOR (1.0)
 
@@ -814,6 +814,7 @@ void reaper_body(void* data){
 }
 
 void lookout_body(void* data){
+   // Here we poll several things at 1Hz, and take some actions if necessary.
    while(1){
       // Just keep this global up to date. This has a built-in 1s sleep.
       bg_utilization = proc_get_cpus_used();
@@ -824,15 +825,16 @@ void lookout_body(void* data){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         if(!current->malleable)
-            continue;
-         if(now - current->last_checkin_time > NONMALLEABLE_THRESHOLD){
+         if(now - current->last_checkin_time > UNRESPONSIVE_THRESHOLD){
             // This client has not been talking to us in a long time, but is
-            // not dead. Mark it as effectively non-malleable.
-            if(text_interface)
-               printf("Note: client %d (%s) has not talked to us in a while. Marking it non-malleable.\n",
-                     current->pid, current->name);
-            current->malleable = 0;
+            // not dead. If it is not stopped (e.g., by job control) send it
+            // SIGCONT to request feedback. This is a best-effort feature; we
+            // shouldn't be too surprised if the signal doesn't get delivered
+            // for some reason, or if the client cannot provide feedback for
+            // some reason. SIGCONT is used because it is generally ignored by
+            // default, so if a handler isn't in place for some reason it
+            // shouldn't terminate anything.
+            kill(current->pid, SIGCONT);
          }
       }
       UNLOCK_CLIENTS;

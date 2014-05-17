@@ -134,6 +134,7 @@ static int current_threads;
 static int current_num_clients = 1;
 static scaf_client_section *current_section = NULL;
 static scaf_client_section *sections = NULL;
+static int scaf_in_parallel_section = 0;
 
 // Discrete IIR, single-pole lowpass filter.
 // Time constant rc is expected to be the same across calls. Inputs x and dt
@@ -184,6 +185,43 @@ static inline int scaf_communication_rate_limit(double current_time){
    else{
       scaf_rate_limit_allowance -= 1.0;
       return 0; // allow the communication.
+   }
+}
+
+static void scaf_feedback_requested(int sig){
+   // Don't mask/queue the signal until we're done. Simply ignore it.
+   signal(SIGCONT, SIG_IGN);
+
+   // Only respond if we are in a parallel section. If for some reason the
+   // experiment process gets this signal, do nothing.
+   if(scaf_in_parallel_section && !scaf_experiment_process){
+      if(scaf_master_thread == pthread_self()){
+         // If we're the master thread, fake an empty serial section by ending
+         // the parallel section as far as bookkeeping is concerned.
+         scaf_section_end();
+         // Next, terminate any experiment and collect its results.
+         scaf_gomp_experiment_destroy();
+         // Finally, continue bookkeeping for the ongoing parallel section.
+         scaf_section_start(current_section_id);
+      }else{
+         // If we're not the master thread, explicitly send the signal to the
+         // master thread, but otherwise do nothing.
+         pthread_kill(scaf_master_thread, sig);
+      }
+   }
+
+   // In any case, set up the handler again.
+   signal(SIGCONT, scaf_feedback_requested);
+}
+
+// If possible, set up a signal handler for SIGCONT to interpret SIGCONT as a
+// request to send an update to scafd. This is best-effort, and is allowed to
+// fail. TODO: if there was already a handler, call it too.
+static void scaf_init_signal_handler(void){
+   void *oldsh = NULL;
+   oldsh = (void*)signal(SIGCONT, scaf_feedback_requested);
+   if(oldsh != (void*)SIG_DFL){
+      always_print(BOLDRED "The signal handler for SIGCONT was not SIG_DFL. SCAF has replaced it!" RESET "\n");
    }
 }
 
@@ -275,6 +313,8 @@ static void* scaf_init(void **context_p){
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
 
    scaf_num_online_hardware_threads = scaf_get_num_cpus();
+
+   scaf_init_signal_handler();
 
    // Initialize stuff for rate limiting
    char *ratelimit = getenv("SCAF_COMM_RATE_LIMIT");
@@ -462,6 +502,7 @@ int scaf_section_start(void* section){
 
    if(!scafd_available){
       current_threads = scaf_num_online_hardware_threads;
+      scaf_in_parallel_section = 1;
       return scaf_num_online_hardware_threads;
    }
 
@@ -529,6 +570,7 @@ int scaf_section_start(void* section){
    }
 
    scaf_section_ipc = 0.0;
+   scaf_in_parallel_section = 1;
 
    if(notified_not_malleable)
       return scaf_num_online_hardware_threads;
@@ -546,8 +588,10 @@ int scaf_section_start(void* section){
 
 void scaf_section_end(void){
 
-   if(!scafd_available)
+   if(!scafd_available){
+      scaf_in_parallel_section = 0;
       return;
+   }
 
 #if(HAVE_LIBPAPI)
    {
@@ -589,6 +633,7 @@ void scaf_section_end(void){
       current_section->experiment_complete = 1;
    }
 
+   scaf_in_parallel_section = 0;
    return;
 }
 
