@@ -71,7 +71,7 @@ int linux_setpriority_wrapper(int which, int who, int prio);
 
 #define REFEREE_PERIOD_US (250000)
 
-#define UNRESPONSIVE_THRESHOLD (10.0)
+#define DEFAULT_UNRESPONSIVE_THRESHOLD (10.0)
 
 #define SERIAL_LOG_FACTOR (1.0)
 
@@ -86,6 +86,7 @@ static int nobgload = 0;
 static int equipartitioning = 0;
 static int curses_interface = 0;
 static int text_interface = 0;
+static int unresponsive_threshold = DEFAULT_UNRESPONSIVE_THRESHOLD;
 #if HAVE_LIBHWLOC
 static int affinity = 1;
 #else
@@ -825,7 +826,7 @@ void lookout_body(void* data){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
       HASH_ITER(hh, clients, current, tmp){
-         if(now - current->last_checkin_time > UNRESPONSIVE_THRESHOLD){
+         if(now - current->last_checkin_time > unresponsive_threshold){
             // This client has not been talking to us in a long time, but is
             // not dead. If it is not stopped (e.g., by job control) send it
             // SIGCONT to request feedback. This is a best-effort feature; we
@@ -844,7 +845,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqbav")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqbavu:")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -861,6 +862,10 @@ int main(int argc, char **argv){
              text_interface = atoi(optarg);
              curses_interface = 0;
              break;
+          case 'u':
+             if(atoi(optarg)>0)
+                unresponsive_threshold = atoi(optarg);
+             break;
           case 'b':
              nobgload = 1;
              break;
@@ -875,7 +880,7 @@ int main(int argc, char **argv){
           default:
              printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
              printf("\n");
-             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n%s\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n", argv[0], affinity?"[-a] ":"", affinity?"\t-a\tdisable affinity-based parallelism control\n":"");
+             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n] [-u n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n%s\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n", argv[0], affinity?"[-a] ":"", affinity?"\t-a\tdisable affinity-based parallelism control\n":"", (int)DEFAULT_UNRESPONSIVE_THRESHOLD);
              exit(1);
              break;
        }
