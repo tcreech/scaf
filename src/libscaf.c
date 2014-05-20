@@ -107,6 +107,8 @@ static int scaf_mypid;
 static int scaf_num_online_hardware_threads;
 static int scaf_nullfd;
 static int notified_not_malleable = 0;
+static int scaf_section_dumps = 0;
+static FILE* scaf_sd;
 
 static double scaf_init_rtclock;
 static float scaf_section_duration;
@@ -196,6 +198,10 @@ static void scaf_feedback_requested(int sig){
    // experiment process gets this signal, do nothing.
    if(scaf_in_parallel_section && !scaf_experiment_process){
       if(scaf_master_thread == pthread_self()){
+         // Disable section dumps for these section start/stops since they are
+         // not in the code.
+         int scaf_section_dumps_save = scaf_section_dumps;
+         scaf_section_dumps = 0;
          // If we're the master thread, fake an empty serial section by ending
          // the parallel section as far as bookkeeping is concerned.
          scaf_section_end();
@@ -203,6 +209,8 @@ static void scaf_feedback_requested(int sig){
          scaf_gomp_experiment_destroy();
          // Finally, continue bookkeeping for the ongoing parallel section.
          scaf_section_start(current_section_id);
+         // Re-enable scaf_section_dumps.
+         scaf_section_dumps = scaf_section_dumps_save;
       }else{
          // If we're not the master thread, explicitly send the signal to the
          // master thread, but otherwise do nothing.
@@ -223,6 +231,18 @@ static void scaf_init_signal_handler(void){
    if(oldsh != (void*)SIG_DFL){
       always_print(BOLDRED "The signal handler for SIGCONT was not SIG_DFL. SCAF has replaced it!" RESET "\n");
    }
+}
+
+inline static void scaf_dump_section_header(void){
+   fprintf(scaf_sd, "time, section, instance, event\n");
+}
+inline static void scaf_dump_section_start(void *section_id){
+   static unsigned instance = 0;
+   fprintf(scaf_sd, "%3.6f, %p, %d, start\n", rtclock(), section_id, instance++);
+}
+inline static void scaf_dump_section_stop(void *section_id){
+   static unsigned instance = 0;
+   fprintf(scaf_sd, "%3.6f, %p, %d, stop\n", rtclock(), section_id, instance++);
 }
 
 static void* scaf_init(void **context_p);
@@ -348,6 +368,19 @@ static void* scaf_init(void **context_p){
      scaf_enable_firsttouch = atoi(firsttouch);
    else
      scaf_enable_firsttouch = 0;
+
+   char *sectiondumps = getenv("SCAF_SECTION_DUMPS");
+   if(sectiondumps)
+     scaf_section_dumps = atoi(sectiondumps);
+   else
+     scaf_section_dumps = 0;
+
+   if(scaf_section_dumps){
+      char section_dump_filename[128];
+      sprintf(section_dump_filename, "/tmp/scaf-sectiondump.%d.csv", scaf_mypid);
+      scaf_sd = fopen(section_dump_filename, "w");
+      scaf_dump_section_header();
+   }
 
    void *context = zmq_init(1);
    *context_p = context;
@@ -480,6 +513,9 @@ void scaf_retire(void){
    zmq_close (scafd);
    zmq_term (scafd_context);
 
+   if(scaf_section_dumps)
+      fclose(scaf_sd);
+
    return;
 }
 
@@ -499,6 +535,9 @@ int scaf_section_start(void* section){
          scaf_connect(scafd);
       }
    }
+
+   if(scaf_section_dumps)
+      scaf_dump_section_start(current_section_id);
 
    if(!scafd_available){
       current_threads = scaf_num_online_hardware_threads;
@@ -587,6 +626,9 @@ int scaf_section_start(void* section){
 }
 
 void scaf_section_end(void){
+
+   if(scaf_section_dumps)
+      scaf_dump_section_stop(current_section_id);
 
    if(!scafd_available){
       scaf_in_parallel_section = 0;
