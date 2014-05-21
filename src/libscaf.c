@@ -407,6 +407,9 @@ void scaf_not_malleable(void){
       scaf_connect(scafd);
    }
 
+   if(!scafd_available)
+      return;
+
    // send notice that we are not malleable.
    debug_print(BOLDRED "Notifying that we are NOT malleable." RESET "\n");
    zmq_msg_t request;
