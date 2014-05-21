@@ -321,7 +321,7 @@ static int scaf_connect(void *scafd){
    } else {
       // No response.
       scafd_available = 0;
-      always_print(RED "WARNING: This SCAF client could not communicate with scafd." RESET "\n");
+      always_print(RED "WARNING: This SCAF client could not communicate with scafd. Using %d threads." RESET "\n", scaf_num_online_hardware_threads);
       return scaf_num_online_hardware_threads;
    }
 }
