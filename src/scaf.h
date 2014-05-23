@@ -160,6 +160,25 @@ struct proc_stat {
    unsigned long long delayacct_blkio_ticks; // %llu
 };
 
+#ifdef SCAF_DISABLE_COLOR
+#define RESET   ""
+#define BLACK   ""      /* Black */
+#define RED     ""      /* Red */
+#define GREEN   ""      /* Green */
+#define YELLOW  ""      /* Yellow */
+#define BLUE    ""      /* Blue */
+#define MAGENTA ""      /* Magenta */
+#define CYAN    ""      /* Cyan */
+#define WHITE   ""      /* White */
+#define BOLDBLACK   ""      /* Bold Black */
+#define BOLDRED     ""      /* Bold Red */
+#define BOLDGREEN   ""      /* Bold Green */
+#define BOLDYELLOW  ""      /* Bold Yellow */
+#define BOLDBLUE    ""      /* Bold Blue */
+#define BOLDMAGENTA ""      /* Bold Magenta */
+#define BOLDCYAN    ""      /* Bold Cyan */
+#define BOLDWHITE   ""      /* Bold White */
+#else
 #define RESET   "\033[0m"
 #define BLACK   "\033[30m"      /* Black */
 #define RED     "\033[31m"      /* Red */
@@ -177,6 +196,7 @@ struct proc_stat {
 #define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
 #define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
 #define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
+#endif
 
 #if defined(DEBUG) || defined(SCAF_DEBUG)
 #define DEBUG_TEST 1
