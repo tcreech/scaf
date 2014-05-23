@@ -112,14 +112,12 @@ static FILE* scaf_sd;
 
 static double scaf_init_rtclock;
 static float scaf_section_duration;
-static float scaf_section_pduration;
 static float scaf_section_ipc;
 static float scaf_section_start_time;
+static float scaf_section_start_process_time;
 static float scaf_section_end_time;
-static float scaf_section_start_ptime;
-static float scaf_section_end_ptime;
+static float scaf_section_end_process_time;
 static float scaf_serial_duration;
-static float scaf_serial_pduration;
 static float scaf_section_efficiency;
 static pthread_t scaf_master_thread;
 
@@ -150,23 +148,6 @@ float lowpass(float x, float dt, float rc){
    float alpha = dt / (rc + dt);
    yp = alpha * x + (1.0-alpha) * yp;
    return yp;
-}
-
-// PAPI's default/only granularity is thread granularity. For example, if the
-// OS schedules our client to run for 0.5s and then schedules other things for
-// another 0.5s before we ask it for measurements, PAPI will report only the
-// achieved counter rates for the 0.5s that the client ran. Since we are
-// effecting space-sharing, we adjust this result to get the effective rate
-// assuming that a CPU was dedicated to the client. In other words, adjust the
-// effective rate as if it was 0 when the client was not being run.
-static inline float get_dedicated_rate(float rtime, float ptime, float rate){
-   if(rtime < ptime){
-      // Assume this is a small error resulting in ptime > rtime, and just
-      // return as if they are equal.
-      return rate;
-   }
-   // The arithmetic mean is appropriate here.
-   return rate * (ptime / rtime);
 }
 
 // Return 1 if we have been communicating too quickly. Implements a token
@@ -564,12 +545,13 @@ int scaf_section_start(void* section){
    // Collect data for future reporting
 #if(HAVE_LIBPAPI)
    {
-      float ipc;
+      float ipc, ptime;
       long long int ins;
-      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &scaf_section_start_ptime, &ins, &ipc);
-      scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
-      scaf_serial_pduration = scaf_section_start_ptime - scaf_section_end_ptime;
+      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
+      scaf_section_start_process_time = pclock();
+      scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
+
    }
 #else
    {
@@ -642,12 +624,21 @@ void scaf_section_end(void){
    {
       float rtime, ptime, ipc;
       long long int ins;
-      int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &scaf_section_end_ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-      scaf_section_pduration = (scaf_section_end_ptime - scaf_section_start_ptime);
+      scaf_section_end_process_time = pclock();
+      // The HL_MEASURE rate we get from PAPI is just for this thread, while it
+      // was running. This may not account for all of the wall time. Estimate
+      // the effective average rate over all threads by assuming that all
+      // threads had similar rates while they were running, and 0 otherwise.
       float oldipc = ipc;
-      ipc = get_dedicated_rate(scaf_section_duration, scaf_section_pduration, ipc);
+      if(!notified_not_malleable)
+         ipc = ipc *
+            (scaf_section_end_process_time-scaf_section_start_process_time) /
+            (current_threads*scaf_section_duration);
+      debug_print(BOLDGREEN "Reduced IPC estimate from %2.3f -> %2.3f" RESET "\n",
+            oldipc, ipc);
       scaf_section_ipc += ipc;
    }
 #else
@@ -693,11 +684,12 @@ static inline void scaf_experiment_start(void){
       assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
       assert(PAPI_multiplex_init() == PAPI_OK);
 
-      float ipc;
+      float ipc, ptime;
       long long int ins;
-      PAPI_HL_MEASURE(&scaf_section_start_time, &scaf_section_start_ptime, &ins, &ipc);
-      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &scaf_section_start_ptime, &ins, &ipc);
+      PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
+      scaf_section_start_process_time = pclock();
    }
 #else
    {
@@ -740,14 +732,27 @@ static inline void scaf_experiment_end(int sig){
 #if(HAVE_LIBPAPI)
    {
       // Get the results from PAPI.
-      float ipc;
+      float ipc, ptime;
       long long int ins;
-      int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &scaf_section_end_ptime, &ins, &ipc);
+      int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &ptime, &ins, &ipc);
       if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-      scaf_section_pduration = (scaf_section_end_ptime - scaf_section_start_ptime);
+      scaf_section_end_process_time = pclock();
+      // The HL_MEASURE rate we get from PAPI is just for this thread, while it
+      // was running. This may not account for all of the wall time. Estimate
+      // the effective average rate over all threads by assuming that all
+      // threads had similar rates while they were running, and 0 otherwise.
       float oldipc = ipc;
-      ipc = get_dedicated_rate(scaf_section_duration, scaf_section_pduration, ipc);
+      if(!notified_not_malleable)
+         ipc = ipc *
+            (scaf_section_end_process_time-scaf_section_start_process_time) /
+            (scaf_section_duration);
+      debug_print(BOLDGREEN "Wall time: %2.3f ; process time: %2.3f" RESET "\n",
+            scaf_section_duration,
+            (scaf_section_end_process_time-scaf_section_start_process_time));
+
+      debug_print(BOLDGREEN "Reduced serial IPC estimate from %2.3f -> %2.3f" RESET "\n",
+            oldipc, ipc);
       scaf_section_ipc = ipc;
    }
 #else

@@ -15,6 +15,7 @@
 #include <uthash.h>
 #include <sys/time.h>
 #include <time.h>
+#include <sys/resource.h>
 
 #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
@@ -39,6 +40,12 @@
 #endif //__sun
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9
+
+static inline double pclock(){
+   struct rusage ru;
+   getrusage(RUSAGE_SELF, &ru);
+   return (ru.ru_utime.tv_sec + ru.ru_utime.tv_usec * 1.0e-6);
+}
 
 static inline double rtclock(){
    struct timeval Tp;
