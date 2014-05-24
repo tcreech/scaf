@@ -743,7 +743,8 @@ static inline void scaf_experiment_end(int sig){
       // the effective average rate over all threads by assuming that all
       // threads had similar rates while they were running, and 0 otherwise.
       float oldipc = ipc;
-      if(!notified_not_malleable)
+      if(!notified_not_malleable &&
+            scaf_section_end_process_time != scaf_section_start_process_time)
          ipc = ipc *
             (scaf_section_end_process_time-scaf_section_start_process_time) /
             (scaf_section_duration);
