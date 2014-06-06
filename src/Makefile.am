@@ -1,5 +1,5 @@
 bin_PROGRAMS = scafd
-scafd_SOURCES = scafd.c scaf.h uthash.h
+scafd_SOURCES = scafd.c scaf.h uthash.h intpart.c intpart.h
 scafd_LDADD = -lm -lpthread -lcurses
 scafd_CFLAGS = -O2
 

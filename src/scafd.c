@@ -20,6 +20,7 @@
 #include <sys/resource.h>
 #include "scaf.h"
 #include "uthash.h"
+#include "intpart.h"
 
 #ifdef HAVE_LIBHWLOC
 #include <hwloc.h>
@@ -650,11 +651,23 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
 }
 
 void maxspeedup_referee_body(void* data){
+   int* intpart = malloc(0);
+   float* floatpart = malloc(0);
+
    while(!stop_referee){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
 
+      int chunksize = 1;
+#if defined(__KNC__) || defined(__amd64__)
+      chunksize = 4;
+#endif //__KNC__
       float metric_sum = 0.0;
+      int num_clients = HASH_COUNT(clients);
+      int i;
+
+      intpart = realloc(intpart, sizeof(int)*num_clients);
+      floatpart = realloc(floatpart, sizeof(float)*num_clients);
 
       HASH_ITER(hh, clients, current, tmp){
          if(current->threads > 1)
@@ -666,37 +679,19 @@ void maxspeedup_referee_body(void* data){
       }
 
       int available_threads = max_threads - ceil(bg_utilization - 0.5);
-      int remaining_rations = MAX(available_threads, 1);
-      float proc_ipc = ((float)(remaining_rations)) / metric_sum;
+      available_threads = MAX(available_threads, 1);
 
+      i=0;
       HASH_ITER(hh, clients, current, tmp){
-         float exact_ration = current->log_factor * proc_ipc;
-         int min_ration = floor(exact_ration);
-         current->threads = min_ration==0?1:min_ration;
-         remaining_rations -= current->threads;
+         float exact_ration = current->log_factor / metric_sum;
+         floatpart[i++] = exact_ration;
       }
 
-      HASH_ITER(hh, clients, current, tmp){
-         if(remaining_rations!=0){
+      intpart_from_floatpart_chunked(available_threads, intpart, floatpart, chunksize, num_clients);
 
-            float exact_ration = current->log_factor * proc_ipc;
-            if(exact_ration > current->threads){
-               current->threads++;
-               remaining_rations--;
-            }
-         }
-#if defined(__KNC__)
-         if(current->threads > 4){
-            unsigned mod = current->threads % 4;
-            current->threads -= mod;
-            remaining_rations += mod;
-         }else{
-            unsigned deficit = 4 - current->threads;
-            current->threads += deficit;
-            remaining_rations = remaining_rations - deficit;
-            remaining_rations = max(remaining_rations, 0);
-         }
-#endif
+      i=0;
+      HASH_ITER(hh, clients, current, tmp){
+         current->threads = intpart[i++];
       }
 
       UNLOCK_CLIENTS;
@@ -705,9 +700,13 @@ void maxspeedup_referee_body(void* data){
 
       usleep(REFEREE_PERIOD_US);
    }
+   free(intpart);
+   free(floatpart);
 }
 
 void equi_referee_body(void* data){
+   int* intpart = malloc(0);
+
    while(!stop_referee){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
@@ -717,24 +716,22 @@ void equi_referee_body(void* data){
       int i=0;
 
       int available_threads = max_threads - ceil(bg_utilization - 0.5);
-      int remaining_rations = MAX(available_threads, 1);
 
-      if(num_clients > 0){
-         int per_client = remaining_rations / num_clients;
-         int extra = remaining_rations % num_clients;
+      intpart = realloc(intpart, sizeof(int)*num_clients);
+      intpart_equipartition_chunked(available_threads, intpart, 1, num_clients);
 
-         i=0;
-         HASH_ITER(hh, clients, current, tmp){
-            current->threads = per_client + (i<extra?1:0);
-            i++;
-         }
+      i=0;
+      HASH_ITER(hh, clients, current, tmp){
+         current->threads = intpart[i++];
       }
+
       UNLOCK_CLIENTS;
 
       apply_affinity_partitioning();
 
       usleep(REFEREE_PERIOD_US);
    }
+   free(intpart);
 }
 
 void referee_switch_handler(int sig){
