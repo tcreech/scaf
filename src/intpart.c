@@ -1,6 +1,7 @@
 #include <intpart.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <float.h>
 #include <assert.h>
 
 /*
@@ -22,12 +23,14 @@ int intpart_equipartition(int n, int* intpart, int l){
  * possible.
  */
 int intpart_equipartition_chunked(int n, int* intpart, int chunksize, int l){
-   int i;
+   int i, ret;
    float *floatpart = malloc(sizeof(float) * l);
    float each = 1.0 / ((float)l);
    for(i=0; i<l; i++)
       floatpart[i] = each;
-   return intpart_from_floatpart_chunked(n, intpart, floatpart, chunksize, l);
+   ret = intpart_from_floatpart_chunked(n, intpart, floatpart, chunksize, l);
+   free(floatpart);
+   return ret;
 }
 
 /*
@@ -60,6 +63,10 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
    // Intermediate "n". This is just the number of chunks given the chunksize.
    remaining_chunks = in = n / chunksize;
 
+   // Do nothing if there is no way to create a partitioning.
+   if(remaining_chunks < l)
+      return -1;
+
    // Keep track of the offset due to integerness. (perfect - integer.)
    diffs = malloc(sizeof(float) * l);
 
@@ -70,18 +77,16 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
       diffs[i] = (floatpart[i]*in) - (float)(intpart[i]);
    }
 
-   //printf("%d/%d chunks remain.\n", remaining_chunks, in);
    // Distribute remaining chunks to the partitions with the greatest
    // difference from their perfect portion.
    while(remaining_chunks > 0){
-      int maxi = 0;
-      float maxdiff = 0;
+      int maxi = -1;
+      float maxdiff = -FLT_MAX;
       // Find the partition with the greatest difference. Our hope is that
       // there are not too many chunks leftover, so this won't have to be done
       // too many times! If we find a partition that is empty, give it
       // something first.
       for(i=0; i<l; i++){
-         //printf("diffs[%d] = %f (%d from %f)\n", i, diffs[i], intpart[i], (floatpart[i]*in));
          if(diffs[i] > maxdiff){
             maxi = i;
             maxdiff = diffs[i];
@@ -92,20 +97,53 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
             break;
          }
       }
-      //printf("partition with greatest difference is at %d (%f).\n\n", maxi, maxdiff);
 
       // Distribute a remaining chunk here.
       remaining_chunks--;
       intpart[maxi] = intpart[maxi] + 1;
       diffs[maxi] = (floatpart[maxi]*in) - (float)(intpart[maxi]);
-
-      //printf("%d/%d chunks remain.\n", remaining_chunks, in);
-      assert(remaining_chunks >= 0);
    }
 
-   //TODO: remove me. For debug only.
+   // It's still possible that there are empty partitions. If so, find them and
+   // steal chunks for them from the partitions with the greatest diffs.
+   int empty = -1;
    for(i=0; i<l; i++){
-      //printf("diffs[%d] = %f (%d from %f)\n", i, diffs[i], intpart[i], (floatpart[i]*in));
+      if(intpart[i]==0){
+         empty = i;
+         break;
+      }
+   }
+   while(empty >= 0){
+      int maxi = -1;
+      float maxdiff = -FLT_MAX;
+      // Find the partition with the greatest difference and multiple chunks.
+      // There *has* to be one with multiple chunks if we have empty
+      // partitions.
+      for(i=0; i<l; i++){
+         if(intpart[i] < 2)
+            continue;
+         if(diffs[i] > maxdiff){
+            maxi = i;
+            maxdiff = diffs[i];
+         }
+      }
+      assert(maxi >= 0);
+
+      // Got one to steal from.
+      intpart[maxi]--;
+      intpart[empty]++;
+      // Update diffs.
+      diffs[maxi] = (floatpart[maxi]*in) - (float)(intpart[maxi]);
+      diffs[empty] = (floatpart[empty]*in) - (float)(intpart[empty]);
+
+      // Check if there is still some empty partition.
+      empty = -1;
+      for(i=0; i<l; i++){
+         if(intpart[i]==0){
+            empty = i;
+            break;
+         }
+      }
    }
 
    // Expand the partition back up by the chunking factor.
@@ -133,5 +171,35 @@ finish:
    free(diffs);
 
    return 0;
+}
+
+/*
+ * Calls intpart_from_floatpart_chunked with floatpart "normalized" using the
+ * normalization weight normweight. The floatpart passed to
+ * intpart_from_floatpart_chunked will be normalized to sum to one after
+ * normweight is added to each floatpart item. For example, Passing
+ * normweight=0 has no effect. Passing normweight as a value very large
+ * relative to the items in normweight will result in a partitioning
+ * approaching equipartitioning.
+ */
+int intpart_from_floatpart_chunked_normalized(int n, int *intpart, float* floatpart, int chunksize, float normweight, int l){
+   float *normfloatpart = malloc(sizeof(float) * l);
+   int i;
+   float sum = 0;
+   for(i=0; i<l; i++){
+      normfloatpart[i] = floatpart[i] + normweight;
+      sum += normfloatpart[i];
+   }
+   for(i=0; i<l; i++){
+      normfloatpart[i] /= sum;
+   }
+
+   int ret;
+   ret = intpart_from_floatpart_chunked(n, intpart, normfloatpart, chunksize, l);
+
+finish:
+   free(normfloatpart);
+
+   return ret;
 }
 
