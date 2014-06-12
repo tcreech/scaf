@@ -57,6 +57,8 @@ static int num_online_processors(void){
       return scaf_get_num_cpus();
 }
 
+static int chunksize = -1;
+
 #if defined(__sun)
 #include "solaris_trace_utils.h"
 #endif //__sun
@@ -658,10 +660,6 @@ void maxspeedup_referee_body(void* data){
       RW_LOCK_CLIENTS;
       scaf_client *current, *tmp;
 
-      int chunksize = 1;
-#if defined(__KNC__) || defined(__amd64__)
-      chunksize = 4;
-#endif //__KNC__
       float metric_sum = 0.0;
       int num_clients = HASH_COUNT(clients);
       int i;
@@ -842,7 +840,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqbavu:")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqbavu:C:")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -873,11 +871,28 @@ int main(int argc, char **argv){
              printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
              exit(1);
              break;
+          case 'C':
+             if(atoi(optarg)>0)
+                chunksize = atoi(optarg);
+             break;
           case 'h':
           default:
              printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
              printf("\n");
-             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n] [-u n]\n\t-h\tdisplay this message\n\t-q\tbe quiet: no status interface\n\t-b\tdon't monitor background load: assume load of 0\n%s\t-e\tonly do strict equipartitioning\n\t-c\tuse a curses status interface\n\t-t n\tuse a plain text status interface, printing every n seconds\n\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n", argv[0], affinity?"[-a] ":"", affinity?"\t-a\tdisable affinity-based parallelism control\n":"", (int)DEFAULT_UNRESPONSIVE_THRESHOLD);
+             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n] [-u n] [-C n]\n"
+                   "\t-h\tdisplay this message\n"
+                   "\t-q\tbe quiet: no status interface\n"
+                   "\t-b\tdon't monitor background load: assume load of 0\n"
+                   "%s"
+                   "\t-e\tonly do strict equipartitioning\n"
+                   "\t-c\tuse a curses status interface\n"
+                   "\t-t n\tuse a plain text status interface, printing every n seconds\n"
+                   "\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n"
+                   "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n",
+                   argv[0],
+                   affinity?"[-a] ":"",
+                   affinity?"\t-a\tdisable affinity-based parallelism control\n":"",
+                   (int)DEFAULT_UNRESPONSIVE_THRESHOLD);
              exit(1);
              break;
        }
@@ -895,6 +910,15 @@ int main(int argc, char **argv){
     max_threads = num_online_processors();
     bg_utilization = proc_get_cpus_used();
     startuptime = rtclock();
+
+    if(chunksize == -1){
+#if defined(__KNC__) || defined(__amd64__)
+       chunksize = 4;
+#else
+       chunksize = 1;
+#endif
+    }
+    assert(chunksize <= max_threads && "Impossible chunksize!");
 
     void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
 
