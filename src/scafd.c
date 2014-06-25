@@ -63,13 +63,6 @@ static int chunksize = -1;
 #include "solaris_trace_utils.h"
 #endif //__sun
 
-#if defined(__linux__)
-int get_all_threads_for_pid(pid_t pid, pid_t *thread_list, int max_num_threads);
-int linux_setpriority_wrapper(int which, int who, int prio);
-
-
-#endif //__linux__
-
 #define MAX_CLIENTS 8
 
 #define REFEREE_PERIOD_US (250000)
@@ -106,50 +99,6 @@ pthread_t referee, reaper, scoreboard, lookout;
 static pthread_rwlock_t clients_lock;
 
 static double startuptime;
-
-#ifdef __linux__
-// Linux's setpriority(2) is not POSIX-compliant and provides no way to set
-// priority for all threads in a process. This wrapper provides the proper
-// functionality. Because reading /proc/ is not atomic it is probably subject
-// to some unreliability, so this is best-effort and always returns 0.
-int linux_setpriority_wrapper(int which, int who, int prio){
-   assert(which == PRIO_PROCESS && "Only to be used with which=PRIO_PROCESS!");
-   pid_t *tidlist = malloc(sizeof(pid_t)*max_threads*2);
-   int numtids = get_all_threads_for_pid(who, tidlist, max_threads*2);
-   int i;
-   for(i=0; i<numtids; i++)
-      setpriority(PRIO_PROCESS, tidlist[i], prio);
-   free(tidlist);
-   return 0;
-}
-
-int get_all_threads_for_pid(pid_t pid, pid_t *thread_list, int max_num_threads){
-   int count = 0;
-   char taskdirpath[256];
-   sprintf(taskdirpath, "/proc/%d/task", pid);
-   DIR *taskdir = opendir(taskdirpath);
-   int name_max = pathconf("/proc", _PC_NAME_MAX);
-   if(name_max == -1)
-      name_max = 255;
-   size_t len = offsetof(struct dirent, d_name) + name_max + 1;
-   struct dirent *de = malloc(len);
-   struct dirent *p_de = de;
-   while(readdir_r(taskdir, p_de, &de) == 0 && de != NULL){
-      p_de = de;
-      if(0==strncmp(".",de->d_name,2))
-         continue;
-      if(0==strncmp("..",de->d_name,3))
-         continue;
-      if(count >= max_num_threads)
-         break;
-
-      thread_list[count++] = atoi(de->d_name);
-   }
-   free(p_de);
-   closedir(taskdir);
-   return count;
-}
-#endif //__linux__
 
 static int inline get_nlwp(pid_t pid){
 #ifdef __linux__
@@ -252,21 +201,6 @@ static void inline apply_affinity_partitioning(void){
             if(!affinity_for_nonmalleable_only || !current->malleable)
                hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
             hwloc_bitmap_copy(current->affinity, client_work_set);
-
-            // If this is a non-malleable process, further reduce the process's
-            // scheduling priority. On Linux in particular, this can help to
-            // convince the OS scheduler to give the malleable processes more
-            // time.
-            if(!current->malleable && total_count > 1){
-               int r;
-#ifdef __linux__
-               r = linux_setpriority_wrapper(PRIO_PROCESS, current->pid, 10);
-#else
-               r = setpriority(PRIO_PROCESS, current->pid, 10);
-#endif
-               if(r != 0)
-                  perror("setpriority on experimenting process failed: ");
-            }
          }
          if(!hwloc_bitmap_isequal(client_experiment_set, current->experiment_affinity)){
             if(!affinity_for_nonmalleable_only || !current->malleable)
@@ -283,21 +217,6 @@ static void inline apply_affinity_partitioning(void){
                hwloc_set_proc_cpubind(topology, current->pid, client_work_set, HWLOC_CPUBIND_STRICT);
             hwloc_bitmap_copy(current->affinity, client_work_set);
             hwloc_bitmap_copy(current->experiment_affinity, client_work_set);
-
-            // If this is a non-malleable process, further reduce the process's
-            // scheduling priority. On Linux in particular, this can help to
-            // convince the OS scheduler to give the malleable processes more
-            // time.
-            if(!current->malleable && total_count > 1){
-               int r;
-#ifdef __linux__
-               r = linux_setpriority_wrapper(PRIO_PROCESS, current->pid, 10);
-#else
-               r = setpriority(PRIO_PROCESS, current->pid, 10);
-#endif
-               if(r != 0)
-                  perror("setpriority on non-experimenting process failed: ");
-            }
          }
       }
    }
