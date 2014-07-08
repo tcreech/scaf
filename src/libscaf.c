@@ -85,6 +85,11 @@
 //#define PAPI_HL_MEASURE PAPI_flips
 #define PAPI_HL_MEASURE PAPI_ipc
 
+#ifdef __KNC__
+int scaf_last_core_offset;
+int scaf_last_threads_per_core;
+#endif //__KNC__
+
 static void* scaf_gomp_experiment_control(void *unused);
 static scaf_client_experiment_description scaf_experiment_desc;
 static inline void scaf_experiment_start(void);
@@ -591,6 +596,10 @@ int scaf_section_start(void* section){
       zmq_msg_close(&reply);
       current_num_clients = response.num_clients;
       current_threads = response.threads;
+#ifdef __KNC__
+      scaf_last_core_offset = response.core_offset;
+      scaf_last_threads_per_core = response.threads_per_core;
+#endif //__KNC__
    }
 
    scaf_section_ipc = 0.0;
@@ -600,11 +609,7 @@ int scaf_section_start(void* section){
       return scaf_num_online_hardware_threads;
 
    if(scaf_will_create_experiment()){
-#if defined(__KNC__)
-      return current_threads-4;
-#else
       return current_threads-1;
-#endif //defined(__KNC__)
    }
 
    return current_threads;

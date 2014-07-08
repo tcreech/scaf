@@ -1,3 +1,19 @@
+diff --git a/Makefile b/Makefile
+index 27c68ce..4d37542 100644
+--- a/Makefile
++++ b/Makefile
+@@ -62,3 +62,11 @@ info:
+ 	@echo mic=$(mic)
+ 	@echo mode=$(mode)
+ 
++# added by tcreech for my specific setup (i.e., pls don't use this)
++install:
++	@echo "-------------------------------------------------------------------------------"
++	@echo "Installing built libiomp5.{so,dbg} into composer_xe*SCAF/lib/..."
++	@cp tmp/lrb_32e-rtl_5_nor_dyn.12.rel.40.c0.t0.knc.lin.off-tempo/libiomp5.so $(HOME)/micopt/stow/composer_xe_2013.5.192_compiler-SCAF/lib/
++	@cp tmp/lrb_32e-rtl_5_nor_dyn.12.rel.40.c0.t0.knc.lin.off-tempo/libiomp5.dbg $(HOME)/micopt/stow/composer_xe_2013.5.192_compiler-SCAF/lib/
++	@echo "Done!"
++
 diff --git a/src/kmp.h b/src/kmp.h
 index 4e7dec0..8e675fd 100644
 --- a/src/kmp.h
@@ -133,7 +149,7 @@ index e7827bf..431cbbf 100644
  
  
 diff --git a/src/kmp_runtime.c b/src/kmp_runtime.c
-index 659fe76..9145a76 100644
+index 659fe76..5ecdded 100644
 --- a/src/kmp_runtime.c
 +++ b/src/kmp_runtime.c
 @@ -45,6 +45,12 @@
@@ -158,13 +174,18 @@ index 659fe76..9145a76 100644
  #if OMP_40_ENABLED
    , int enter_teams
  #endif /* OMP_40_ENABLED */
-@@ -2236,6 +2242,23 @@ __kmp_reserve_threads( kmp_root_t *root, kmp_team_t *parent_team,
+@@ -2236,6 +2242,28 @@ __kmp_reserve_threads( kmp_root_t *root, kmp_team_t *parent_team,
              }
          }
      }
 +    else if ( __kmp_global.g.g_dynamic_mode == dynamic_scaf ) {
++#if KMP_MIC
++        new_nthreads = scaf_last_allocation*scaf_last_threads_per_core - __kmp_nth + (root->r.r_active ? 1
++          : root->r.r_hot_team->t.t_nproc);
++#else
 +        new_nthreads = scaf_last_allocation - __kmp_nth + (root->r.r_active ? 1
 +          : root->r.r_hot_team->t.t_nproc);
++#endif //KMP_MIC
 +        if ( new_nthreads <= 1 ) {
 +            KC_TRACE( 10, ( "__kmp_reserve_threads: T#%d thread limit reduced reservation to 1 thread\n",
 +              master_tid ));
@@ -182,7 +203,7 @@ index 659fe76..9145a76 100644
      else {
          KMP_ASSERT( 0 );
      }
-@@ -2567,7 +2590,7 @@ __kmp_fork_call(
+@@ -2567,7 +2595,7 @@ __kmp_fork_call(
      {
          nthreads = master_set_numthreads ?
              master_set_numthreads : get__nproc_2( parent_team, master_tid );
@@ -191,6 +212,73 @@ index 659fe76..9145a76 100644
  #if OMP_40_ENABLED
          // AC: If we execute teams from parallel region (on host), then teams
          //     should be created but each can only have 1 thread if nesting is disabled.
+@@ -2944,6 +2972,18 @@ __kmp_fork_call(
+     KA_TRACE( 20, ("__kmp_fork_call: T#%d(%d:0) invoke microtask = %p\n",
+                 gtid, team->t.t_id, team->t.t_pkfn ) );
+ 
++#if KMP_MIC
++    /* First, re-set our affinity in case it has changed. */
++    if(team->t.t_size_changed){
++        //printf("thread %d's affinity changed! (t_size_changed=%d)\n", gtid,
++        //      team->t.t_size_changed);
++        int i = (gtid + __kmp_affinity_offset) % __kmp_affinity_num_masks;
++        kmp_affin_mask_t *mask = KMP_CPU_INDEX(__kmp_affinity_masks, i);
++        KMP_CPU_COPY(master_th->th.th_affin_mask, mask);
++        __kmp_set_system_affinity(master_th->th.th_affin_mask, TRUE);
++    }
++#endif //KMP_MIC
++
+     if (! team->t.t_invoke( gtid )) {
+         KMP_ASSERT2( 0, "cannot invoke microtask for MASTER thread" );
+     }
+@@ -5849,6 +5889,30 @@ __kmp_allocate_team( kmp_root_t *root, int new_nproc, int max_nproc,
+ #endif /* OMP_40_ENABLED */
+         }
+ 
++#if KMP_MIC
++        /* Figure out new affinities, if necesssary, for SCAF. */
++
++        if(team -> t.t_size_changed == 1)
++        {
++              __kmpc_place_threads(scaf_last_allocation,
++                    scaf_last_threads_per_core,
++                    scaf_last_core_offset);
++
++              // reset affinity_masks
++              if (__kmp_affinity_masks != NULL) {
++                 __kmp_free(__kmp_affinity_masks);
++                 __kmp_affinity_masks = NULL;
++              }
++              // Tell __kmp_affinity_initialize() to ignore the master thread's
++              // current affinity
++              int respect_save = __kmp_affinity_respect_mask;
++              __kmp_affinity_respect_mask = 0;
++
++              __kmp_affinity_initialize();
++              __kmp_affinity_respect_mask = respect_save;
++        }
++#endif /* KMP_MIC */
++
+         /* reallocate space for arguments if necessary */
+         __kmp_alloc_argv_entries( argc, team, TRUE );
+         team -> t.t_argc     = argc;
+@@ -6571,6 +6635,16 @@ __kmp_launch_thread( kmp_info_t *this_thr )
+         if ( TCR_SYNC_PTR(*pteam) && !TCR_4(__kmp_global.g.g_done) ) {
+             /* we were just woken up, so run our new task */
+             if ( TCR_SYNC_PTR((*pteam)->t.t_pkfn) != NULL ) {
++                /* First, re-set our affinity in case it has changed. */
++#if KMP_MIC
++               if((*pteam)->t.t_size_changed){
++                  int i = (gtid + __kmp_affinity_offset) % __kmp_affinity_num_masks;
++                  kmp_affin_mask_t *mask = KMP_CPU_INDEX(__kmp_affinity_masks, i);
++                  KMP_CPU_COPY(this_thr->th.th_affin_mask, mask);
++                  __kmp_set_system_affinity(this_thr->th.th_affin_mask, TRUE);
++               }
++#endif // KMP_MIC
++
+                 int rc;
+                 KA_TRACE( 20, ("__kmp_launch_thread: T#%d(%d:%d) invoke microtask = %p\n",
+                     gtid, (*pteam)->t.t_id, __kmp_tid_from_gtid(gtid), (*pteam)->t.t_pkfn ));
 diff --git a/src/kmp_settings.c b/src/kmp_settings.c
 index 40c0499..1dac6f9 100644
 --- a/src/kmp_settings.c
@@ -233,3 +321,98 @@ index 40c0499..1dac6f9 100644
      else {
          KMP_WARNING( StgInvalidValue, name, value );
      }
+diff --git a/src/makefile.mk b/src/makefile.mk
+index dfebc10..05186c3 100644
+--- a/src/makefile.mk
++++ b/src/makefile.mk
+@@ -1057,6 +1057,8 @@ ifeq "$(os)" "win"
+     objcopy = objcopy$(exe)
+ endif
+ 
++objcopy = /usr/linux-k1om-4.7/bin/x86_64-k1om-linux-objcopy
++
+ # required/ is a directory containing OMP RTL object files and really required files from external
+ # libraries. required/.obj is a flag. If this file present, it means all required objects already
+ # in place. Note, required-objects.pl copies files to specified directory. It is necessary, because
+@@ -1094,8 +1096,8 @@ endif
+ 
+ stripped/$(lib_file) : unstripped/$(lib_file) $(dbg_file) stripped/.dir .rebuild
+ 	$(target)
+-	objcopy --strip-debug $< $@.tmp
+-	objcopy --add-gnu-debuglink=$(dbg_file) $@.tmp $@
++	/usr/linux-k1om-4.7/bin/x86_64-k1om-linux-objcopy --strip-debug $< $@.tmp
++	/usr/linux-k1om-4.7/bin/x86_64-k1om-linux-objcopy --add-gnu-debuglink=$(dbg_file) $@.tmp $@
+ 
+ ifeq "$(os)" "mac"
+ 
+@@ -1428,6 +1430,9 @@ ifneq "$(filter %-dyna win-%,$(os)-$(LINK_TYPE))" ""
+                 td_exp += libc.so.6
+                 td_exp += libdl.so.2
+                 td_exp += libpthread.so.0
++                td_exp += libscaf.so.0
++                td_exp += libm.so.6
++                td_exp += libgcc_s.so.1
+             endif
+         endif
+         ifeq "$(MIC_OS)" "bsd"
+diff --git a/tools/check-instruction-set.pl b/tools/check-instruction-set.pl
+index 0027965..8994735 100755
+--- a/tools/check-instruction-set.pl
++++ b/tools/check-instruction-set.pl
+@@ -155,7 +155,7 @@ sub check_file($;$$) {
+     if ( "$mic_os" eq "bsd" ) {
+         execute( [ "x86_64-freebsd-objdump", "-d", $file ], -stdout => \@bulk );
+     } else {
+-        execute( [ "objdump", "-d", $file ], -stdout => \@bulk );
++        execute( [ "/usr/linux-k1om-4.7/bin/x86_64-k1om-linux-objdump", "-d", $file ], -stdout => \@bulk );
+     }
+ 
+     my $n = 0;
+diff --git a/tools/common.inc b/tools/common.inc
+index d9f0584..53eeef0 100644
+--- a/tools/common.inc
++++ b/tools/common.inc
+@@ -98,7 +98,7 @@ ifneq "$(mic)" "no"
+     hask1om = $(shell if (objdump --help | grep -s k1om); then echo OK; else echo KO; fi)
+     ifneq "$(hask1om)" "OK"
+         # Appropriate binutils are not already set up, so try to add them from the default place.
+-        micBinPath = /usr/linux-k1om-4.7/x86_64-k1om-linux/bin
++        micBinPath = /usr/linux-k1om-4.7/bin
+         micBinPresent = $(shell if test -d $(micBinPath); then echo OK; else echo KO; fi)
+         ifneq "$(micBinPresent)" "OK"
+             # We can't find them in the normal place, so complain.
+diff --git a/tools/lib/Uname.pm b/tools/lib/Uname.pm
+index 7ee2181..710855f 100644
+--- a/tools/lib/Uname.pm
++++ b/tools/lib/Uname.pm
+@@ -117,6 +117,8 @@ if ( $^O =~ m/cygwin/i ) {
+             # On some systems POSIX::uname() and Net::Domain::hostfqdn() reports different names.
+             # Let us issue a warning if they significantly different. Names are insignificantly
+             # different if POSIX::uname() matches the beginning of Net::Domain::hostfqdn().
++            $fqdn = "tempo.arc.nasa.gov" unless defined $fqdn;
++
+             if (
+                 $fqdn eq substr( $fqdn, 0, length( $fqdn ) )
+                 &&
+diff --git a/tools/src/common-rules.mk b/tools/src/common-rules.mk
+index ddab086..b6805b0 100644
+--- a/tools/src/common-rules.mk
++++ b/tools/src/common-rules.mk
+@@ -149,7 +149,7 @@ expand-vars = $(perl) $(tools_dir)expand-vars.pl --strict $(ev-flags) $< $@
+         # strip debug info in case it is requested (works for Linux* OS only)
+         ifneq "$(dbg_strip)" ""
+             ifeq "$(DEBUG_INFO)" "off"
+-	        objcopy --strip-debug $@
++	        /usr/linux-k1om-4.7/bin/x86_64-k1om-linux-objcopy --strip-debug $@
+             endif
+         endif
+ 
+@@ -175,7 +175,7 @@ expand-vars = $(perl) $(tools_dir)expand-vars.pl --strict $(ev-flags) $< $@
+ 
+ %.dbg : %$(dll) .rebuild
+ 	$(target)
+-	objcopy --only-keep-debug $< $@ 
++	/usr/linux-k1om-4.7/bin/x86_64-k1om-linux-objcopy --only-keep-debug $< $@ 
+ 
+ 
+ .PRECIOUS: %.res                       # Do not delete automatically created files.

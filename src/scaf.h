@@ -93,7 +93,16 @@ typedef struct {
    enum scaf_message_purpose message;
    int threads;
    int num_clients;
+#ifdef __KNC__
+   int core_offset;
+   int threads_per_core;
+#endif //__KNC__
 } scaf_daemon_message;
+
+#ifdef __KNC__
+extern int scaf_last_core_offset;
+extern int scaf_last_threads_per_core;
+#endif //__KNC__
 
 typedef struct {
    void (*fn) (void *);

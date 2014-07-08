@@ -46,8 +46,16 @@ typedef struct {
    hwloc_cpuset_t affinity;
    hwloc_cpuset_t experiment_affinity;
 #endif // HAVE_LIBHWLOC
+#ifdef __KNC__
+   int core_offset;
+   int threads_per_core;
+#endif //__KNC__
    UT_hash_handle hh;
 } scaf_client;
+
+#ifdef __KNC__
+#define SCAFD_KNC_THREADS_PER_CORE (4)
+#endif //__KNC__
 
 static int num_online_processors(void){
    char *maxenv = getenv("OMP_NUM_THREADS");
@@ -419,6 +427,10 @@ void add_client(int client_pid, int threads, void* client_section){
    c->affinity = hwloc_bitmap_alloc_full();
    c->experiment_affinity = hwloc_bitmap_alloc_full();
 #endif //HAVE_LIBHWLOC
+#ifdef __KNC__
+   c->core_offset = 0;
+   c->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
+#endif //__KNC__
 
    get_name_from_pid(client_pid, c->name);
    HASH_ADD_INT(clients, pid, c);
@@ -487,7 +499,7 @@ void curses_print_clients(void){
    refresh();
 }
 
-int perform_client_request(scaf_client_message *client_message, int *num_clients_report){
+int perform_client_request(scaf_client_message *client_message, scaf_daemon_message *daemon_message){
    int client_pid = client_message->pid;
    int client_request = client_message->message;
 
@@ -503,7 +515,8 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       client_threads = max_threads;
       add_client(client_pid, client_threads, client_message->section);
       UNLOCK_CLIENTS;
-      *num_clients_report = num_clients+1;
+      daemon_message->num_clients = num_clients+1;
+      daemon_message->threads = max_threads;
       return max_threads;
    }
    else if(client_request == SCAF_SECTION_START){
@@ -517,7 +530,12 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       client->checkins++;
       client->last_checkin_time = rtclock();
       UNLOCK_CLIENTS;
-      *num_clients_report = num_clients;
+      daemon_message->num_clients = num_clients;
+      daemon_message->threads = client_threads;
+#ifdef __KNC__
+      daemon_message->core_offset = client->core_offset;
+      daemon_message->threads_per_core = client->threads_per_core;
+#endif //__KNC__
       return client_threads;
    }
    else if(client_request == SCAF_NOT_MALLEABLE){
@@ -526,9 +544,10 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       assert(client);
       client->malleable = 0;
       UNLOCK_CLIENTS;
-      //num_clients_report is bogus here. We don't want to spent the time to
+      //num_clients is bogus here. We don't want to spent the time to
       //count the clients.
-      *num_clients_report = 0;
+      daemon_message->num_clients = 0;
+      daemon_message->threads = 0;
       return 0;
    }
    else if(client_request == SCAF_EXPT_START){
@@ -538,9 +557,10 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       client->experimenting = 1;
       client->experiment_pid = client_message->message_value.experiment_pid;
       UNLOCK_CLIENTS;
-      //num_clients_report is bogus here. We don't want to spent the time to
+      //num_clients is bogus here. We don't want to spent the time to
       //count the clients.
-      *num_clients_report = 0;
+      daemon_message->num_clients = 0;
+      daemon_message->threads = 0;
       return 0;
    }
    else if(client_request == SCAF_EXPT_STOP){
@@ -549,9 +569,10 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       assert(client);
       client->experimenting = 0;
       UNLOCK_CLIENTS;
-      //num_clients_report is bogus here. We don't want to spent the time to
+      //num_clients is bogus here. We don't want to spent the time to
       //count the clients.
-      *num_clients_report = 0;
+      daemon_message->num_clients = 0;
+      daemon_message->threads = 0;
       return 0;
    }
    else if(client_request == SCAF_FORMER_CLIENT){
@@ -561,13 +582,12 @@ int perform_client_request(scaf_client_message *client_message, int *num_clients
       int num_clients = HASH_COUNT(clients);
       UNLOCK_CLIENTS;
       free(old_client);
-      *num_clients_report = num_clients;
+      daemon_message->num_clients = num_clients;
+      daemon_message->threads = 0;
       return 0;
    }
 
    // Invalid request?
-
-   *num_clients_report = 0;
    return 0;
 }
 
@@ -608,7 +628,12 @@ void maxspeedup_referee_body(void* data){
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
-         current->threads = intpart[i++];
+         current->threads = intpart[i];
+#ifdef __KNC__
+         current->core_offset = i==0?0 : intpart[i-1];
+         current->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
+#endif //__KNC__
+         i++;
       }
 
       UNLOCK_CLIENTS;
@@ -639,7 +664,12 @@ void equi_referee_body(void* data){
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
-         current->threads = intpart[i++];
+         current->threads = intpart[i];
+#ifdef __KNC__
+         current->core_offset = i==0?0 : intpart[i-1];
+         current->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
+#endif //__KNC__
+         i++;
       }
 
       UNLOCK_CLIENTS;
@@ -830,9 +860,11 @@ int main(int argc, char **argv){
     bg_utilization = proc_get_cpus_used();
     startuptime = rtclock();
 
-    if(chunksize == -1){
-#if defined(__KNC__) || defined(__amd64__)
-       chunksize = 4;
+   if(chunksize == -1){
+#if defined(__KNC__)
+      chunksize = 1;
+#elif defined(__amd64__)
+      chunksize = 4;
 #else
        chunksize = 1;
 #endif
@@ -868,27 +900,26 @@ int main(int argc, char **argv){
 #else
         int r = zmq_recv (responder, &request, 0);
 #endif
-        //  Ignore failed recvs for now; these are usually just interruptions
-        //  due to SIGWINCH
-        if(r<0)
-           continue;
+      //  Ignore failed recvs for now; these are usually just interruptions
+      //  due to SIGWINCH
+      if(r<0)
+         continue;
 
-        scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
-        // Update client bookkeeping if necessary
-        int num_clients;
-        int threads = perform_client_request(client_message, &num_clients);
-        assert(threads > 0 || client_message->message != SCAF_SECTION_START);
-        assert(threads < 4096);
-        zmq_msg_close (&request);
+      scaf_client_message *client_message = (scaf_client_message*)(zmq_msg_data(&request));
 
-        //  Send reply back to client (even if the client doesn't care about an answer)
-        zmq_msg_t reply;
-        zmq_msg_init_size (&reply, sizeof(scaf_daemon_message));
-        scaf_daemon_message *dm = zmq_msg_data(&reply);
-        dm->message = SCAF_DAEMON_FEEDBACK;
-        dm->threads = threads;
-        dm->num_clients = num_clients;
+      zmq_msg_t reply;
+      zmq_msg_init_size (&reply, sizeof(scaf_daemon_message));
+      scaf_daemon_message *dm = zmq_msg_data(&reply);
+      dm->message = SCAF_DAEMON_FEEDBACK;
 
+      // Update client bookkeeping if necessary
+      int threads = perform_client_request(client_message, dm);
+      assert(threads == dm->threads);
+      assert(threads > 0 || client_message->message != SCAF_SECTION_START);
+      assert(threads < 4096);
+      zmq_msg_close (&request);
+
+      //  Send reply back to client (even if the client doesn't care about an answer)
 #if ZMQ_VERSION_MAJOR > 2
         zmq_sendmsg (responder, &reply, 0);
 #else
