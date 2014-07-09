@@ -88,6 +88,7 @@ static int chunksize = -1;
 
 static int nobgload = 0;
 static int equipartitioning = 0;
+static int eq_offset = 0;
 static int curses_interface = 0;
 static int text_interface = 0;
 static int unresponsive_threshold = DEFAULT_UNRESPONSIVE_THRESHOLD;
@@ -660,7 +661,15 @@ void equi_referee_body(void* data){
       int available_threads = max_threads - ceil(bg_utilization - 0.5);
 
       intpart = realloc(intpart, sizeof(int)*num_clients);
+      if(eq_offset > 0 && num_clients == 2){
+         // Special case: if user specified number of threads for first client
+         // of a two-client pair, then just force that configuration. This is a
+         // silly option provided for development purposes.
+         intpart[0] = eq_offset;
+         intpart[1] = available_threads - eq_offset;
+      }else{
       intpart_equipartition_chunked(available_threads, intpart, 1, num_clients);
+      }
 
       i=0;
       HASH_ITER(hh, clients, current, tmp){
@@ -789,7 +798,7 @@ void lookout_body(void* data){
 int main(int argc, char **argv){
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqbavu:C:")) != -1){
+    while( (c = getopt(argc, argv, "ct:heqbavu:E:C:")) != -1){
        switch(c){
           case 'q':
              curses_interface = 0;
@@ -820,6 +829,9 @@ int main(int argc, char **argv){
              printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
              exit(1);
              break;
+         case 'E':
+            eq_offset = atoi(optarg);
+            break;
           case 'C':
              if(atoi(optarg)>0)
                 chunksize = atoi(optarg);
