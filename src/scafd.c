@@ -375,8 +375,8 @@ float proc_get_cpus_used(void){
 #endif //__linux__
 
 #if defined(__sun)
-      sleep(1);
-      return 0.0;
+   sleep(1);
+   return 0.0;
 #endif //__sun
 }
 
@@ -668,7 +668,7 @@ void equi_referee_body(void* data){
          intpart[0] = eq_offset;
          intpart[1] = available_threads - eq_offset;
       }else{
-      intpart_equipartition_chunked(available_threads, intpart, 1, num_clients);
+         intpart_equipartition_chunked(available_threads, intpart, 1, num_clients);
       }
 
       i=0;
@@ -797,80 +797,80 @@ void lookout_body(void* data){
 
 int main(int argc, char **argv){
 
-    int c;
-    while( (c = getopt(argc, argv, "ct:heqbavu:E:C:")) != -1){
-       switch(c){
-          case 'q':
-             curses_interface = 0;
-             text_interface = 0;
-             break;
-          case 'e':
-             equipartitioning = 1;
-             break;
-          case 'c':
-             curses_interface = 1;
-             text_interface = 0;
-             break;
-          case 't':
-             text_interface = atoi(optarg);
-             curses_interface = 0;
-             break;
-          case 'u':
-             if(atoi(optarg)>0)
-                unresponsive_threshold = atoi(optarg);
-             break;
-          case 'b':
-             nobgload = 1;
-             break;
-          case 'a':
-             affinity = 0;
-             break;
-          case 'v':
-             printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
-             exit(1);
-             break;
+   int c;
+   while( (c = getopt(argc, argv, "ct:heqbavu:E:C:")) != -1){
+      switch(c){
+         case 'q':
+            curses_interface = 0;
+            text_interface = 0;
+            break;
+         case 'e':
+            equipartitioning = 1;
+            break;
+         case 'c':
+            curses_interface = 1;
+            text_interface = 0;
+            break;
+         case 't':
+            text_interface = atoi(optarg);
+            curses_interface = 0;
+            break;
+         case 'u':
+            if(atoi(optarg)>0)
+               unresponsive_threshold = atoi(optarg);
+            break;
+         case 'b':
+            nobgload = 1;
+            break;
+         case 'a':
+            affinity = 0;
+            break;
+         case 'v':
+            printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
+            exit(1);
+            break;
          case 'E':
             eq_offset = atoi(optarg);
             break;
-          case 'C':
-             if(atoi(optarg)>0)
-                chunksize = atoi(optarg);
-             break;
-          case 'h':
-          default:
-             printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
-             printf("\n");
-             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n] [-u n] [-C n]\n"
-                   "\t-h\tdisplay this message\n"
-                   "\t-q\tbe quiet: no status interface\n"
-                   "\t-b\tdon't monitor background load: assume load of 0\n"
-                   "%s"
-                   "\t-e\tonly do strict equipartitioning\n"
-                   "\t-c\tuse a curses status interface\n"
-                   "\t-t n\tuse a plain text status interface, printing every n seconds\n"
-                   "\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n"
-                   "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n",
-                   argv[0],
-                   affinity?"[-a] ":"",
-                   affinity?"\t-a\tdisable affinity-based parallelism control\n":"",
-                   (int)DEFAULT_UNRESPONSIVE_THRESHOLD);
-             exit(1);
-             break;
-       }
-    }
+         case 'C':
+            if(atoi(optarg)>0)
+               chunksize = atoi(optarg);
+            break;
+         case 'h':
+         default:
+            printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
+            printf("\n");
+            printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n] [-u n] [-C n]\n"
+                  "\t-h\tdisplay this message\n"
+                  "\t-q\tbe quiet: no status interface\n"
+                  "\t-b\tdon't monitor background load: assume load of 0\n"
+                  "%s"
+                  "\t-e\tonly do strict equipartitioning\n"
+                  "\t-c\tuse a curses status interface\n"
+                  "\t-t n\tuse a plain text status interface, printing every n seconds\n"
+                  "\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n"
+                  "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n",
+                  argv[0],
+                  affinity?"[-a] ":"",
+                  affinity?"\t-a\tdisable affinity-based parallelism control\n":"",
+                  (int)DEFAULT_UNRESPONSIVE_THRESHOLD);
+            exit(1);
+            break;
+      }
+   }
 
 #ifdef HAVE_LIBHWLOC
-    hwloc_topology_init(&topology);
-    hwloc_topology_load(topology);
-    num_hwloc_objs = hwloc_get_nbobjs_by_type(topology, part_at);
-    top_obj = hwloc_get_root_obj(topology);
+   hwloc_topology_init(&topology);
+   hwloc_topology_load(topology);
+   num_hwloc_objs = hwloc_get_nbobjs_by_type(topology, part_at);
+   top_obj = hwloc_get_root_obj(topology);
 
-    apply_affinity_partitioning();
+   apply_affinity_partitioning();
 #endif
 
-    max_threads = num_online_processors();
-    bg_utilization = proc_get_cpus_used();
-    startuptime = rtclock();
+   max_threads = num_online_processors();
+   bg_utilization = proc_get_cpus_used();
+   startuptime = rtclock();
 
    if(chunksize == -1){
 #if defined(__KNC__)
@@ -878,39 +878,39 @@ int main(int argc, char **argv){
 #elif defined(__amd64__)
       chunksize = 4;
 #else
-       chunksize = 1;
+      chunksize = 1;
 #endif
-    }
-    assert(chunksize <= max_threads && "Impossible chunksize!");
+   }
+   assert(chunksize <= max_threads && "Impossible chunksize!");
 
-    void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
+   void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
 
-    pthread_rwlock_init(&clients_lock, NULL);
-    if(curses_interface)
-       pthread_create(&scoreboard, NULL, (void *(*)(void*))&curses_scoreboard_body, NULL);
-    else if(text_interface)
-       pthread_create(&scoreboard, NULL, (void *(*)(void*))&text_scoreboard_body, NULL);
-    pthread_create(&referee, NULL, (void *(*)(void*))referee_body, NULL);
-    pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
-    pthread_create(&lookout, NULL, (void *(*)(void*))&lookout_body, NULL);
+   pthread_rwlock_init(&clients_lock, NULL);
+   if(curses_interface)
+      pthread_create(&scoreboard, NULL, (void *(*)(void*))&curses_scoreboard_body, NULL);
+   else if(text_interface)
+      pthread_create(&scoreboard, NULL, (void *(*)(void*))&text_scoreboard_body, NULL);
+   pthread_create(&referee, NULL, (void *(*)(void*))referee_body, NULL);
+   pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
+   pthread_create(&lookout, NULL, (void *(*)(void*))&lookout_body, NULL);
 
-    signal(SIGUSR1, referee_switch_handler);
-    signal(SIGUSR2, referee_switch_handler);
+   signal(SIGUSR1, referee_switch_handler);
+   signal(SIGUSR2, referee_switch_handler);
 
-    void *context = zmq_init (1);
+   void *context = zmq_init (1);
 
-    //  Socket to talk to clients
-    void *responder = zmq_socket (context, ZMQ_REP);
-    zmq_bind (responder, SCAF_CONNECT_STRING);
+   //  Socket to talk to clients
+   void *responder = zmq_socket (context, ZMQ_REP);
+   zmq_bind (responder, SCAF_CONNECT_STRING);
 
-    while (1) {
-        //  Wait for next request from client
-        zmq_msg_t request;
-        zmq_msg_init (&request);
+   while (1) {
+      //  Wait for next request from client
+      zmq_msg_t request;
+      zmq_msg_init (&request);
 #if ZMQ_VERSION_MAJOR > 2
-        int r = zmq_recvmsg (responder, &request, 0);
+      int r = zmq_recvmsg (responder, &request, 0);
 #else
-        int r = zmq_recv (responder, &request, 0);
+      int r = zmq_recv (responder, &request, 0);
 #endif
       //  Ignore failed recvs for now; these are usually just interruptions
       //  due to SIGWINCH
@@ -933,15 +933,15 @@ int main(int argc, char **argv){
 
       //  Send reply back to client (even if the client doesn't care about an answer)
 #if ZMQ_VERSION_MAJOR > 2
-        zmq_sendmsg (responder, &reply, 0);
+      zmq_sendmsg (responder, &reply, 0);
 #else
-        zmq_send (responder, &reply, 0);
+      zmq_send (responder, &reply, 0);
 #endif
-        zmq_msg_close (&reply);
-    }
+      zmq_msg_close (&reply);
+   }
 
-    //  We never get here but if we did, this would be how we end
-    zmq_close (responder);
-    zmq_term (context);
-    return 0;
+   //  We never get here but if we did, this would be how we end
+   zmq_close (responder);
+   zmq_term (context);
+   return 0;
 }
