@@ -386,22 +386,15 @@ scaf_client *find_client(int client_pid){
    return c;
 }
 
-char* gnu_basename(char *path){
-   char *base = strrchr(path, '/');
-   return base ? base+1 : path;
-}
-
 void get_name_from_pid(int pid, char *buf){
 #if defined(__linux__)
-   char procpath[64];
-   char exe[1024];
-   sprintf(procpath, "/proc/%d/exe", pid);
-   ssize_t s = readlink(procpath, exe, 1023);
-   if(s >= 0){
-      exe[s] = '\0';
-      char *name = gnu_basename(exe);
-      strncpy(buf, name, SCAF_MAX_CLIENT_NAME_LEN);
-   }else{
+   char commpath[64];
+   sprintf(commpath, "/proc/%d/comm", pid);
+   FILE *comm_f = fopen(commpath, "r");
+   int s = 0;
+   if(comm_f != NULL)
+      s = fscanf(comm_f, "%s\n", buf);
+   if(s < 1){
       char name[5] = "[??]\0";
       strncpy(buf, name, 5);
    }
