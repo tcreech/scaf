@@ -75,7 +75,7 @@
 #if defined(__sun)
 #define SCAF_LOWPASS_TIME_CONSTANT (15.0)
 #elif defined(__KNC__)
-#define SCAF_LOWPASS_TIME_CONSTANT (40.0)
+#define SCAF_LOWPASS_TIME_CONSTANT (4.0)
 #else //__sun
 #define SCAF_LOWPASS_TIME_CONSTANT (2.0)
 #endif //__sun
