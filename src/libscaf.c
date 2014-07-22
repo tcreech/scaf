@@ -753,12 +753,7 @@ static inline void scaf_experiment_end(int sig){
          ipc = ipc *
             (scaf_section_end_process_time-scaf_section_start_process_time) /
             (scaf_section_duration);
-      debug_print(BOLDGREEN "Wall time: %2.3f ; process time: %2.3f" RESET "\n",
-            scaf_section_duration,
-            (scaf_section_end_process_time-scaf_section_start_process_time));
 
-      debug_print(BOLDGREEN "Reduced serial IPC estimate from %2.3f -> %2.3f" RESET "\n",
-            oldipc, ipc);
       scaf_section_ipc = ipc;
    }
 #else
