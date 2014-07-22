@@ -111,6 +111,8 @@ static int scaf_disable_experiments = 0;
 static int scaf_enable_firsttouch = 0;
 static int scaf_experiment_process = 0;
 volatile int scaf_experiment_starting = 0;
+static zmq_msg_t scaf_experiment_request;
+static zmq_msg_t scaf_experiment_reply;
 
 static int scaf_experiment_running = 0;
 static int scaf_lazy_experiments;
@@ -717,12 +719,25 @@ void scaf_section_end(void){
       current_section->experiment_ipc_speedup = 1;
       current_section->experiment_complete = 1;
    }
+#endif // !__KNC__
 
+skip_math:
    scaf_in_parallel_section = 0;
    return;
 }
 
 static inline void scaf_experiment_start(void){
+
+   // Set up a new ZMQ context of our own.
+   void *context = zmq_init(1);
+   scafd = zmq_socket (context, ZMQ_REQ);
+   char parent_connect_string[64];
+   sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
+   assert(0==zmq_connect(scafd, parent_connect_string));
+   // Pre-allocate messages which will be used to send the experiment results.
+   assert(0==zmq_msg_init_data(&scaf_experiment_request, &scaf_section_ipc, sizeof(float), NULL, NULL));
+   zmq_msg_init(&scaf_experiment_reply);
+
 
 #if(HAVE_LIBPAPI)
    {
@@ -807,30 +822,20 @@ static inline void scaf_experiment_end(int sig){
    }
 #endif
 
-   void *context = zmq_init(1);
-   scafd = zmq_socket (context, ZMQ_REQ);
-   char parent_connect_string[64];
-   sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
-   assert(0==zmq_connect(scafd, parent_connect_string));
-   zmq_msg_t request;
-   assert(0==zmq_msg_init_data(&request, &scaf_section_ipc, sizeof(float), NULL, NULL));
-   
 #if ZMQ_VERSION_MAJOR > 2
-   zmq_sendmsg(scafd, &request, 0);
+   zmq_sendmsg(scafd, &scaf_experiment_request, 0);
 #else
-   zmq_send(scafd, &request, 0);
+   zmq_send(scafd, &scaf_experiment_request, 0);
 #endif
-   zmq_msg_close(&request);
+   zmq_msg_close(&scaf_experiment_request);
 
-   zmq_msg_t reply;
-   zmq_msg_init(&reply);
 #if ZMQ_VERSION_MAJOR > 2
-      zmq_recvmsg(scafd, &reply, 0);
+      zmq_recvmsg(scafd, &scaf_experiment_reply, 0);
 #else
-      zmq_recv(scafd, &reply, 0);
+      zmq_recv(scafd, &scaf_experiment_reply, 0);
 #endif
    //int response = *((int*)(zmq_msg_data(&reply)));
-   zmq_msg_close(&reply);
+   zmq_msg_close(&scaf_experiment_reply);
 
    zmq_close(scafd);
    _Exit(0);
