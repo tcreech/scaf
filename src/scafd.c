@@ -513,6 +513,8 @@ int perform_client_request(scaf_client_message *client_message, scaf_daemon_mess
       client_threads = max_threads;
       add_client(client_pid, client_threads, client_message->section);
       UNLOCK_CLIENTS;
+      pthread_kill(referee, SIGUSR1);
+
       daemon_message->num_clients = num_clients+1;
       daemon_message->threads = max_threads;
       return max_threads;
@@ -582,6 +584,7 @@ int perform_client_request(scaf_client_message *client_message, scaf_daemon_mess
       free(old_client);
       daemon_message->num_clients = num_clients;
       daemon_message->threads = 0;
+      pthread_kill(referee, SIGUSR1);
       return 0;
    }
 
@@ -689,6 +692,13 @@ void equi_referee_body(void* data){
 
 void referee_switch_handler(int sig){
 
+   // If we are the referee (not the master thread), do nothing. We are just
+   // being woken from sleep for some reason.
+   if(pthread_self() == referee){
+      signal(sig, referee_switch_handler);
+      return;
+   }
+
    void (*new_referee_body)(void *) = sig==SIGUSR1?&equi_referee_body:&maxspeedup_referee_body;
    if(text_interface)
       printf("Switching to %s referee!\n", sig==SIGUSR1?"equipartitioning":"maxspeedup");
@@ -752,6 +762,7 @@ void reaper_body(void* data){
             UNLOCK_CLIENTS;
 
             //When done, resume the read lock and free the allocation.
+            pthread_kill(referee, SIGUSR1);
             free(current);
             RD_LOCK_CLIENTS;
          }
