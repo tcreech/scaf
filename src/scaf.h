@@ -104,6 +104,8 @@ extern int scaf_last_core_offset;
 extern int scaf_last_threads_per_core;
 #endif //__KNC__
 
+extern volatile int scaf_experiment_starting;
+
 typedef struct {
    void (*fn) (void *);
    void *data;

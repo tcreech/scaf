@@ -110,6 +110,8 @@ static int scafd_available;
 static int scaf_disable_experiments = 0;
 static int scaf_enable_firsttouch = 0;
 static int scaf_experiment_process = 0;
+volatile int scaf_experiment_starting = 0;
+
 static int scaf_experiment_running = 0;
 static int scaf_lazy_experiments;
 static int scaf_mypid;
@@ -866,12 +868,14 @@ int scaf_gomp_experiment_create(void (*fn) (void*), void *data){
    if(!scaf_will_create_experiment())
       return 0;
 
+   scaf_experiment_starting = 1;
    scaf_experiment_desc.fn = fn;
    scaf_experiment_desc.data = data;
    pthread_barrier_init(&(scaf_experiment_desc.control_pthread_b), NULL, 2);
    pthread_create(&(scaf_experiment_desc.control_pthread), NULL, &scaf_gomp_experiment_control, NULL);
    pthread_barrier_wait(&(scaf_experiment_desc.control_pthread_b));
    pthread_barrier_destroy(&(scaf_experiment_desc.control_pthread_b));
+   scaf_experiment_starting = 0;
    scaf_experiment_running = 1;
    scaf_advise_experiment_start();
 
@@ -960,6 +964,8 @@ static void* scaf_gomp_experiment_control(void *unused){
   int expPid = fork();
   scaf_experiment_desc.experiment_pid = expPid;
   if(expPid==0){
+    // Note that experiment setup is finished.
+    scaf_experiment_starting = 0;
     // Note that we are an experiment process.
     scaf_experiment_process = 1;
     // Start up our timing stuff with SCAF.
