@@ -70,7 +70,11 @@
 
 // Limit measured efficiency to this value. This can restrict the effects of
 // timing glitches resulting in crazy values.
+#ifdef __KNC__
+#define SCAF_MEASURED_EFF_LIMIT 5.0
+#else
 #define SCAF_MEASURED_EFF_LIMIT 2.0
+#endif //__KNC__
 
 #if defined(__sun)
 #define SCAF_LOWPASS_TIME_CONSTANT (15.0)
@@ -141,6 +145,12 @@ static scaf_client_section *current_section = NULL;
 static scaf_client_section *sections = NULL;
 static int scaf_in_parallel_section = 0;
 
+#ifdef __KNC__
+#define LOWPASS_INITIAL (2.0)
+#else
+#define LOWPASS_INITIAL (0.5)
+#endif //__KNC__
+
 // Discrete IIR, single-pole lowpass filter.
 // Time constant rc is expected to be the same across calls. Inputs x and dt
 // are the data and time interval, respectively.
@@ -149,10 +159,21 @@ inline float lowpass(float x, float dt, float rc){
 #else
 float lowpass(float x, float dt, float rc){
 #endif //__GNUC__
-   static float yp = 0.5;
+   static float yp = LOWPASS_INITIAL;
    float alpha = dt / (rc + dt);
    yp = alpha * x + (1.0-alpha) * yp;
    return yp;
+}
+
+// Reset the lowpass filter to its initial state.
+#if defined(__GNUC__)
+inline float lowpass_reset(void){
+#else
+float lowpass_reset(void){
+#endif //__GNUC__
+   // By feeding the initial value back in with a zero time-constant, the
+   // filter value is set to exactly the initial value.
+   return lowpass(LOWPASS_INITIAL, 1.0, 0.0);
 }
 
 // Return 1 if we have been communicating too quickly. Implements a token
@@ -639,11 +660,17 @@ void scaf_section_end(void){
       // threads had similar rates while they were running, and 0 otherwise.
       float oldipc = ipc;
       if(!notified_not_malleable)
-         ipc = ipc *
+#ifdef __KNC__
+         ipc *=
+            min(1.0,
             (scaf_section_end_process_time-scaf_section_start_process_time) /
-            (current_threads*scaf_section_duration);
-      debug_print(BOLDGREEN "Reduced IPC estimate from %2.3f -> %2.3f" RESET "\n",
-            oldipc, ipc);
+            (current_threads*scaf_last_threads_per_core*scaf_section_duration));
+#else
+         ipc *=
+            min(1.0,
+            (scaf_section_end_process_time-scaf_section_start_process_time) /
+            (current_threads*scaf_section_duration));
+#endif //__KNC__
       scaf_section_ipc += ipc;
    }
 #else
@@ -655,13 +682,23 @@ void scaf_section_end(void){
 #endif
 
    if(notified_not_malleable)
+#ifdef __KNC__
       scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) / current_threads;
+#else
+      scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) /
+         (current_threads * scaf_last_threads_per_core);
+#endif //__KNC__
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
    scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->experiment_serial_ipc);
+#ifdef __KNC__
    debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads);
+#else
+   debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads*scaf_last_threads_per_core);
+#endif //__KNC__
 
+#ifndef __KNC__
    // If our "parallel" section was actually run on only 1 thread, also store
    // the results as the result of an experiment. (Even if an experiment had
    // already been run.)
