@@ -73,7 +73,11 @@ static int chunksize = -1;
 
 #define MAX_CLIENTS 8
 
+#ifdef __KNC__
+#define REFEREE_PERIOD_US (1000000 * 8)
+#else
 #define REFEREE_PERIOD_US (250000)
+#endif //__KNC__
 
 #define DEFAULT_UNRESPONSIVE_THRESHOLD (10.0)
 
