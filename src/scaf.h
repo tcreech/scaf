@@ -68,7 +68,6 @@ typedef struct {
    float last_time;
    float last_ipc;
    int experiment_complete;
-   int first_touch_complete;
    int experiment_threads;
    float experiment_serial_ipc;
    float experiment_parallel_ipc;

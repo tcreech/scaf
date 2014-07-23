@@ -108,7 +108,6 @@ static void *scafd_context;
 
 static int scafd_available;
 static int scaf_disable_experiments = 0;
-static int scaf_enable_firsttouch = 0;
 static int scaf_experiment_process = 0;
 volatile int scaf_experiment_starting = 0;
 static zmq_msg_t scaf_experiment_request;
@@ -269,7 +268,6 @@ static scaf_client_section inline *scaf_add_client_section(void *section_id){
    new_section->last_time = 0;
    new_section->last_ipc = 1;
    new_section->experiment_complete = 0;
-   new_section->first_touch_complete = !scaf_enable_firsttouch;
    new_section->experiment_serial_ipc = 0.5;
    HASH_ADD_PTR(sections, section_id, new_section);
    return new_section;
@@ -386,12 +384,6 @@ static void* scaf_init(void **context_p){
       scaf_lazy_math = atoi(lazymath);
    else
       scaf_lazy_math = 1;
-
-   char *firsttouch = getenv("SCAF_ENABLE_FIRSTTOUCH");
-   if(firsttouch)
-     scaf_enable_firsttouch = atoi(firsttouch);
-   else
-     scaf_enable_firsttouch = 0;
 
    char *sectiondumps = getenv("SCAF_SECTION_DUMPS");
    if(sectiondumps)
@@ -887,9 +879,6 @@ static int inline scaf_will_create_experiment(void){
       return 0;
    }
 #endif
-
-   if(!current_section->first_touch_complete)
-      return 0;
 
    return 1;
 }
