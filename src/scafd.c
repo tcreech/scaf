@@ -194,7 +194,13 @@ static void inline apply_affinity_partitioning(void){
       hwloc_bitmap_zero(client_experiment_set);
 
       int weight;
-      for(weight=0; weight < current->threads; weight++){
+      int current_threads;
+#ifdef __KNC__
+      current_threads = current->threads * current->threads_per_core;
+#else
+      current_threads = current->threads;
+#endif //__KNC__
+      for(weight=0; weight < current_threads; weight++){
          o = hwloc_get_next_obj_by_type(topology, part_at, o);
          hwloc_bitmap_or(client_total_set, client_total_set, o->cpuset);
       }
