@@ -953,11 +953,6 @@ void scaf_gomp_experiment_destroy(void){
    debug_print(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->experiment_threads, scaf_section_duration, current_section->experiment_serial_ipc, current_section->experiment_parallel_ipc, current_section->experiment_ipc_eff, current_section->experiment_ipc_speedup);
    scaf_experiment_running = 0;
    scaf_advise_experiment_stop();
-
-   // Finally, reset our filter system to the intial value, equalizing bogus
-   // history in the filter due to "lazy" experiments.
-   if(scaf_lazy_experiments)
-      lowpass_reset();
 }
 
 // An alias for the above.
