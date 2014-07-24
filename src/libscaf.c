@@ -203,8 +203,12 @@ static inline int scaf_communication_rate_limit(double current_time){
 }
 
 static void scaf_feedback_requested(int sig){
-   // Don't mask/queue the signal until we're done. Simply ignore it.
-   signal(SIGCONT, SIG_IGN);
+   // Mask/queue the signal until we're done. It may be better to simply ignore it, but 
+   sigset_t sigs_cont;
+   sigemptyset(&sigs_cont);
+   sigaddset(&sigs_cont, sig);
+   // Block sig while we're in this handler.
+   pthread_sigmask(SIG_BLOCK, &sigs_cont, NULL);
 
    // Only respond if we are in a parallel section. If for some reason the
    // experiment process gets this signal, do nothing.
@@ -230,6 +234,8 @@ static void scaf_feedback_requested(int sig){
       }
    }
 
+   // Unblock this signal again.
+   pthread_sigmask(SIG_UNBLOCK, &sigs_cont, NULL);
    // In any case, set up the handler again.
    signal(SIGCONT, scaf_feedback_requested);
 }
