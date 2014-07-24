@@ -209,7 +209,7 @@ static void scaf_feedback_requested(int sig){
    // Only respond if we are in a parallel section. If for some reason the
    // experiment process gets this signal, do nothing.
    if(scaf_in_parallel_section && !scaf_experiment_process){
-      if(scaf_master_thread == pthread_self()){
+      if(pthread_equal(scaf_master_thread, pthread_self())){
          // Disable section dumps for these section start/stops since they are
          // not in the code.
          int scaf_section_dumps_save = scaf_section_dumps;
