@@ -120,7 +120,7 @@ static int lazy_math_skipped = 0;
 static int scaf_mypid;
 static int scaf_num_online_hardware_threads;
 static int scaf_nullfd;
-static int notified_not_malleable = 0;
+volatile int scaf_notified_not_malleable = 0;
 static int scaf_section_dumps = 0;
 static FILE* scaf_sd;
 
@@ -457,7 +457,7 @@ void scaf_not_malleable(void){
    assert(response.message == SCAF_DAEMON_FEEDBACK);
    zmq_msg_close(&reply);
 
-   notified_not_malleable = 1;
+   scaf_notified_not_malleable = 1;
 
    return;
 }
@@ -654,7 +654,7 @@ skip_math:
    scaf_section_ipc = 0.0;
    scaf_in_parallel_section = 1;
 
-   if(notified_not_malleable)
+   if(scaf_notified_not_malleable)
       return scaf_num_online_hardware_threads;
 
    if(scaf_will_create_experiment()){
@@ -692,7 +692,7 @@ void scaf_section_end(void){
       // the effective average rate over all threads by assuming that all
       // threads had similar rates while they were running, and 0 otherwise.
       float oldipc = ipc;
-      if(!notified_not_malleable)
+      if(!scaf_notified_not_malleable)
 #ifdef __KNC__
          ipc *=
             min(1.0,
@@ -714,7 +714,7 @@ void scaf_section_end(void){
    }
 #endif
 
-   if(notified_not_malleable)
+   if(scaf_notified_not_malleable)
 #ifdef __KNC__
       scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) / current_threads;
 #else
@@ -735,7 +735,7 @@ void scaf_section_end(void){
    // If our "parallel" section was actually run on only 1 thread, also store
    // the results as the result of an experiment. (Even if an experiment had
    // already been run.)
-   if(current_threads == 1 && !notified_not_malleable){
+   if(current_threads == 1 && !scaf_notified_not_malleable){
       current_section->experiment_threads = 1;
       current_section->experiment_serial_ipc = scaf_section_ipc;
       current_section->experiment_parallel_ipc = scaf_section_ipc;
@@ -831,7 +831,7 @@ static inline void scaf_experiment_end(int sig){
       // the effective average rate over all threads by assuming that all
       // threads had similar rates while they were running, and 0 otherwise.
       float oldipc = ipc;
-      if(!notified_not_malleable &&
+      if(!scaf_notified_not_malleable &&
             scaf_section_end_process_time != scaf_section_start_process_time)
          ipc = ipc *
             (scaf_section_end_process_time-scaf_section_start_process_time) /
