@@ -188,6 +188,16 @@ static void inline apply_affinity_partitioning(void){
    }
 
    hwloc_obj_t o = NULL;
+#ifdef __KNC__
+   {
+      // Intel's OpenMP runtime considers the first physical core to be what hwloc
+      // considers to be the second physical core. Therefore, we skip hwloc's
+      // first physical core. (4 PUs.)
+      int z;
+      for(z=0; z<4; z++)
+         o = hwloc_get_next_obj_by_type(topology, part_at, o);
+   }
+#endif
    HASH_ITER(hh, clients, current, tmp){
       hwloc_bitmap_zero(client_total_set);
       hwloc_bitmap_zero(client_work_set);
@@ -639,7 +649,10 @@ void maxspeedup_referee_body(void* data){
       HASH_ITER(hh, clients, current, tmp){
          current->threads = intpart[i];
 #ifdef __KNC__
-         current->core_offset = i==0?0 : intpart[i-1];
+         if(current->malleable)
+            current->core_offset = i==0 ? 0 : intpart[i-1];
+         else
+            current->core_offset = 0;
          current->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
 #endif //__KNC__
          i++;
@@ -683,7 +696,10 @@ void equi_referee_body(void* data){
       HASH_ITER(hh, clients, current, tmp){
          current->threads = intpart[i];
 #ifdef __KNC__
-         current->core_offset = i==0?0 : intpart[i-1];
+         if(current->malleable)
+            current->core_offset = i==0 ? 0 : intpart[i-1];
+         else
+            current->core_offset = 0;
          current->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
 #endif //__KNC__
          i++;
