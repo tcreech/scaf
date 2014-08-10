@@ -550,6 +550,8 @@ int perform_client_request(scaf_client_message *client_message, scaf_daemon_mess
       assert(client);
       client->malleable = 0;
       UNLOCK_CLIENTS;
+      //Wake referee again
+      pthread_kill(referee, SIGUSR1);
       //num_clients is bogus here. We don't want to spent the time to
       //count the clients.
       daemon_message->num_clients = 0;
