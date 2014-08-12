@@ -760,8 +760,16 @@ static inline void scaf_experiment_start(void){
    assert(0==zmq_connect(scafd, parent_connect_string));
    // Pre-allocate messages which will be used to send the experiment results.
    assert(0==zmq_msg_init_data(&scaf_experiment_request, &scaf_section_ipc, sizeof(float), NULL, NULL));
-   zmq_msg_init(&scaf_experiment_reply);
 
+   // We can re-use the scaf_section_ipc global to store the reply so long as
+   // it is as big as an int. Either way, the compiler should know the sizes at
+   // compile time and thus eliminate the branch.
+   if(sizeof(float) >= sizeof(int))
+      assert(0==zmq_msg_init_data(&scaf_experiment_reply, &scaf_section_ipc, sizeof(int), NULL, NULL));
+   else{
+      int *whatevs = malloc(sizeof(int));
+      assert(0==zmq_msg_init_data(&scaf_experiment_reply, whatevs, sizeof(int), NULL, NULL));
+   }
 
 #if(HAVE_LIBPAPI)
    {
@@ -858,7 +866,6 @@ static inline void scaf_experiment_end(int sig){
 #else
       zmq_recv(scafd, &scaf_experiment_reply, 0);
 #endif
-   //int response = *((int*)(zmq_msg_data(&reply)));
    zmq_msg_close(&scaf_experiment_reply);
 
    zmq_close(scafd);
