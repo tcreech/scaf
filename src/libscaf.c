@@ -716,19 +716,19 @@ void scaf_section_end(void){
 
    if(scaf_notified_not_malleable)
 #ifdef __KNC__
-      scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) / current_threads;
-#else
       scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) /
          (current_threads * scaf_last_threads_per_core);
+#else
+      scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) / current_threads;
 #endif //__KNC__
 
    current_section->last_time = scaf_section_duration;
    current_section->last_ipc  = scaf_section_ipc;
    scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->experiment_serial_ipc);
 #ifdef __KNC__
-   debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads);
-#else
    debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads*scaf_last_threads_per_core);
+#else
+   debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads);
 #endif //__KNC__
 
 #ifndef __KNC__
