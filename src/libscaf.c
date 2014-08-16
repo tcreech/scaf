@@ -786,8 +786,12 @@ static inline void scaf_experiment_end(int sig){
    syscall(__NR_scaf_experiment_done);
 
    // Ignore all the signals which we might still get.
-   signal(SIGALRM, SIG_IGN);
-   signal(SIGINT, SIG_IGN);
+   sigset_t sigs_end;
+   sigemptyset(&sigs_end);
+   sigaddset(&sigs_end, SIGALRM);
+   sigaddset(&sigs_end, SIGINT);
+   sigaddset(&sigs_end, SIGCONT);
+   pthread_sigmask(SIG_BLOCK, &sigs_end, NULL);
 
    debug_print(BLUE "SCAF experiment ending.");
    if(sig == SIGALRM){
