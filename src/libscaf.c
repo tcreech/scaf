@@ -110,8 +110,6 @@ static int scafd_available;
 static int scaf_disable_experiments = 0;
 static int scaf_experiment_process = 0;
 volatile int scaf_experiment_starting = 0;
-static zmq_msg_t scaf_experiment_request;
-static zmq_msg_t scaf_experiment_reply;
 
 static int scaf_experiment_running = 0;
 static int scaf_lazy_experiments;
@@ -752,25 +750,6 @@ skip_math:
 
 static inline void scaf_experiment_start(void){
 
-   // Set up a new ZMQ context of our own.
-   void *context = zmq_init(1);
-   scafd = zmq_socket (context, ZMQ_REQ);
-   char parent_connect_string[64];
-   sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
-   assert(0==zmq_connect(scafd, parent_connect_string));
-   // Pre-allocate messages which will be used to send the experiment results.
-   assert(0==zmq_msg_init_data(&scaf_experiment_request, &scaf_section_ipc, sizeof(float), NULL, NULL));
-
-   // We can re-use the scaf_section_ipc global to store the reply so long as
-   // it is as big as an int. Either way, the compiler should know the sizes at
-   // compile time and thus eliminate the branch.
-   if(sizeof(float) >= sizeof(int))
-      assert(0==zmq_msg_init_data(&scaf_experiment_reply, &scaf_section_ipc, sizeof(int), NULL, NULL));
-   else{
-      int *whatevs = malloc(sizeof(int));
-      assert(0==zmq_msg_init_data(&scaf_experiment_reply, whatevs, sizeof(int), NULL, NULL));
-   }
-
 #if(HAVE_LIBPAPI)
    {
       // Begin gathering information with PAPI.
@@ -854,12 +833,24 @@ static inline void scaf_experiment_end(int sig){
    }
 #endif
 
+   // Set up a new ZMQ context of our own.
+   void *context = zmq_init(1);
+   scafd = zmq_socket (context, ZMQ_REQ);
+   char parent_connect_string[64];
+   sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
+   assert(0==zmq_connect(scafd, parent_connect_string));
+   zmq_msg_t scaf_experiment_request;
+   assert(0==zmq_msg_init_data(&scaf_experiment_request, &scaf_section_ipc, sizeof(float), NULL, NULL));
+
 #if ZMQ_VERSION_MAJOR > 2
    zmq_sendmsg(scafd, &scaf_experiment_request, 0);
 #else
    zmq_send(scafd, &scaf_experiment_request, 0);
 #endif
    zmq_msg_close(&scaf_experiment_request);
+
+   zmq_msg_t scaf_experiment_reply;
+   assert(0==zmq_msg_init(&scaf_experiment_reply));
 
 #if ZMQ_VERSION_MAJOR > 2
       zmq_recvmsg(scafd, &scaf_experiment_reply, 0);
