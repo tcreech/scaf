@@ -985,8 +985,8 @@ static void* scaf_gomp_experiment_control(void *unused){
   pthread_sigmask(SIG_BLOCK, &sigs_int_alrm, &oldset);
 
   int expPid = fork();
-  scaf_experiment_desc.experiment_pid = expPid;
   if(expPid==0){
+    scaf_experiment_desc.experiment_pid = getpid();
     // Note that experiment setup is finished.
     scaf_experiment_starting = 0;
     // Note that we are an experiment process.
@@ -1018,6 +1018,7 @@ static void* scaf_gomp_experiment_control(void *unused){
     _Exit(0);
   }
 
+  scaf_experiment_desc.experiment_pid = expPid;
   // Restore signal handling.
   pthread_sigmask(SIG_SETMASK, &oldset, NULL);
 
