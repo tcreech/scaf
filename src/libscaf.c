@@ -201,13 +201,6 @@ static inline int scaf_communication_rate_limit(double current_time){
 }
 
 static void scaf_feedback_requested(int sig){
-   // Mask/queue the signal until we're done. It may be better to simply ignore it, but 
-   sigset_t sigs_cont;
-   sigemptyset(&sigs_cont);
-   sigaddset(&sigs_cont, sig);
-   // Block sig while we're in this handler.
-   pthread_sigmask(SIG_BLOCK, &sigs_cont, NULL);
-
    // Only respond if we are in a parallel section. If for some reason the
    // experiment process gets this signal, do nothing.
    if(scaf_in_parallel_section && !scaf_experiment_process){
@@ -231,22 +224,17 @@ static void scaf_feedback_requested(int sig){
          pthread_kill(scaf_master_thread, sig);
       }
    }
-
-   // Unblock this signal again.
-   pthread_sigmask(SIG_UNBLOCK, &sigs_cont, NULL);
-   // In any case, set up the handler again.
-   signal(SIGCONT, scaf_feedback_requested);
 }
 
 // If possible, set up a signal handler for SIGCONT to interpret SIGCONT as a
 // request to send an update to scafd. This is best-effort, and is allowed to
 // fail. TODO: if there was already a handler, call it too.
 static void scaf_init_signal_handler(void){
-   void *oldsh = NULL;
-   oldsh = (void*)signal(SIGCONT, scaf_feedback_requested);
-   if(oldsh != (void*)SIG_DFL){
-      always_print(BOLDRED "The signal handler for SIGCONT was not SIG_DFL. SCAF has replaced it!" RESET "\n");
-   }
+   struct sigaction new_sa;
+   new_sa.sa_handler = scaf_feedback_requested;
+   new_sa.sa_flags = SA_RESTART;
+
+   assert(0 == sigaction(SIGCONT, &new_sa, NULL));
 }
 
 inline static void scaf_dump_section_header(void){
@@ -772,10 +760,17 @@ static inline void scaf_experiment_start(void){
    }
 #endif
 
+   struct sigaction new_sa;
+   sigemptyset(&new_sa.sa_mask);
+   sigaddset(&new_sa.sa_mask, SIGALRM);
+   sigaddset(&new_sa.sa_mask, SIGINT);
+   sigaddset(&new_sa.sa_mask, SIGCONT);
+   new_sa.sa_handler = scaf_experiment_end;
+   new_sa.sa_flags = 0;
    // Install the end of the experiment as the SIGINT handler.
-   signal(SIGINT, scaf_experiment_end);
+   assert(0 == sigaction(SIGINT, &new_sa, NULL));
    // Also install the end of the experiment as the SIGALRM handler.
-   signal(SIGALRM, scaf_experiment_end);
+   assert(0 == sigaction(SIGALRM, &new_sa, NULL));
 
    if(SCAF_ENFORCE_EXPERIMENT_TIME_LIMIT)
       alarm(SCAF_EXPERIMENT_TIME_LIMIT_SECONDS);
@@ -785,13 +780,17 @@ static inline void scaf_experiment_end(int sig){
 
    syscall(__NR_scaf_experiment_done);
 
-   // Ignore all the signals which we might still get.
-   sigset_t sigs_end;
-   sigemptyset(&sigs_end);
-   sigaddset(&sigs_end, SIGALRM);
-   sigaddset(&sigs_end, SIGINT);
-   sigaddset(&sigs_end, SIGCONT);
-   pthread_sigmask(SIG_BLOCK, &sigs_end, NULL);
+   // Ignore all the signals which we might still get. (These are already
+   // blocked if we arrived here as a signal handler, but not if we just called
+   // it after finishing the experimental function.)
+   if(sig == 0){
+      sigset_t sigs_end;
+      sigemptyset(&sigs_end);
+      sigaddset(&sigs_end, SIGALRM);
+      sigaddset(&sigs_end, SIGINT);
+      sigaddset(&sigs_end, SIGCONT);
+      pthread_sigmask(SIG_BLOCK, &sigs_end, NULL);
+   }
 
    debug_print(BLUE "SCAF experiment ending.");
    if(sig == SIGALRM){
@@ -926,6 +925,12 @@ void scaf_gomp_experiment_destroy(void){
    }
 #endif
 
+   // Mask/queue SIGCONT until we're done.
+   sigset_t sigs_cont, sigs_old;
+   sigemptyset(&sigs_cont);
+   sigaddset(&sigs_cont, SIGCONT);
+   pthread_sigmask(SIG_BLOCK, &sigs_cont, &sigs_old);
+
    // Get the experiment results from the child process.
    void *experiment_child = zmq_socket(scafd_context, ZMQ_REP);
    char child_connect_string[64];
@@ -961,6 +966,9 @@ void scaf_gomp_experiment_destroy(void){
    debug_print(BLUE "Section (%p): @(1,%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_section->experiment_threads, scaf_section_duration, current_section->experiment_serial_ipc, current_section->experiment_parallel_ipc, current_section->experiment_ipc_eff, current_section->experiment_ipc_speedup);
    scaf_experiment_running = 0;
    scaf_advise_experiment_stop();
+
+  // Restore signal handling.
+  pthread_sigmask(SIG_SETMASK, &sigs_old, NULL);
 }
 
 // An alias for the above.
