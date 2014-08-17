@@ -563,7 +563,7 @@ int scaf_section_start(void* section){
       scaf_section_efficiency = 0.5;
    }
 
-   if(scaf_lazy_math && current_num_clients < 2){
+   if(scaf_lazy_math && (current_num_clients < 2 || scaf_disable_experiments)){
       scaf_section_start_time = rtclock() - scaf_init_rtclock;
       lazy_math_skipped = 1;
       goto skip_math;
@@ -660,7 +660,7 @@ void scaf_section_end(void){
       return;
    }
 
-   if(scaf_lazy_math && current_num_clients < 2){
+   if(scaf_lazy_math && (current_num_clients < 2 || scaf_disable_experiments)){
       lazy_math_skipped = 1;
       goto skip_math;
    }
