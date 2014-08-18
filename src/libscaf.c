@@ -106,6 +106,8 @@ static int did_scaf_startup;
 static void *scafd;
 static void *scafd_context;
 
+static zmq_msg_t *scaf_experiment_send_msg, *scaf_experiment_recv_msg;
+
 static int scafd_available;
 static int scaf_disable_experiments = 0;
 static int scaf_experiment_process = 0;
@@ -736,6 +738,34 @@ skip_math:
    return;
 }
 
+// Allocate ZMQ structures or anything else that we might want to do before
+// (outside of) the signal handler.
+static inline void scaf_experiment_end_prep(void){
+   // Set up a new ZMQ context of our own. Note that we clobber the scafd
+   // connection that we inherited from the control thread.
+   void *context = zmq_init(1);
+   scafd = zmq_socket (context, ZMQ_REQ);
+   char parent_connect_string[64];
+   sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
+   assert(0==zmq_connect(scafd, parent_connect_string));
+
+   // Allocate the two messages which `scaf_experiment_end' will use.
+   scaf_experiment_send_msg = malloc(sizeof(zmq_msg_t));
+   scaf_experiment_recv_msg = malloc(sizeof(zmq_msg_t));
+
+   // Initialize the messages with the actual message data to be used.
+   assert(0==zmq_msg_init_data(scaf_experiment_send_msg, &scaf_section_ipc, sizeof(float), NULL, NULL));
+   // Re-use the same global pointer for the receive buffer if possible.
+   // Otherwise, just allocate something new on the heap. (The compiler should
+   // optimize away this branch entirely.)
+   if(sizeof(float) >= sizeof(int)){
+      assert(0==zmq_msg_init_data(scaf_experiment_recv_msg, &scaf_section_ipc, sizeof(int), NULL, NULL));
+   }else{
+      int *trash = malloc(sizeof(int));
+      assert(0==zmq_msg_init_data(scaf_experiment_recv_msg, trash, sizeof(int), NULL, NULL));
+   }
+}
+
 static inline void scaf_experiment_start(void){
 
 #if(HAVE_LIBPAPI)
@@ -759,6 +789,12 @@ static inline void scaf_experiment_start(void){
       scaf_section_start_time = 1.0;
    }
 #endif
+
+   // Initialize anything that will be needed in `scaf_experiment_end'. The
+   // reason we do this ahead of time is because `scaf_experiment_end' will
+   // potentially be reached as a signal handler, and we want to minimize the
+   // number of dangerous things (e.g., allocs) we do in a signal handler.
+   scaf_experiment_end_prep();
 
    struct sigaction new_sa;
    sigemptyset(&new_sa.sa_mask);
@@ -836,31 +872,21 @@ static inline void scaf_experiment_end(int sig){
    }
 #endif
 
-   // Set up a new ZMQ context of our own.
-   void *context = zmq_init(1);
-   scafd = zmq_socket (context, ZMQ_REQ);
-   char parent_connect_string[64];
-   sprintf(parent_connect_string, "ipc:///tmp/scaf-ipc-%d", scaf_mypid);
-   assert(0==zmq_connect(scafd, parent_connect_string));
-   zmq_msg_t scaf_experiment_request;
-   assert(0==zmq_msg_init_data(&scaf_experiment_request, &scaf_section_ipc, sizeof(float), NULL, NULL));
+   // The zmq messages here should already have been initialized outside of the
+   // signal handler, including buffers.
+#if ZMQ_VERSION_MAJOR > 2
+   zmq_sendmsg(scafd, scaf_experiment_send_msg, 0);
+#else
+   zmq_send(scafd, scaf_experiment_send_msg, 0);
+#endif
+   zmq_msg_close(scaf_experiment_send_msg);
 
 #if ZMQ_VERSION_MAJOR > 2
-   zmq_sendmsg(scafd, &scaf_experiment_request, 0);
+      zmq_recvmsg(scafd, scaf_experiment_recv_msg, 0);
 #else
-   zmq_send(scafd, &scaf_experiment_request, 0);
+      zmq_recv(scafd, scaf_experiment_recv_msg, 0);
 #endif
-   zmq_msg_close(&scaf_experiment_request);
-
-   zmq_msg_t scaf_experiment_reply;
-   assert(0==zmq_msg_init(&scaf_experiment_reply));
-
-#if ZMQ_VERSION_MAJOR > 2
-      zmq_recvmsg(scafd, &scaf_experiment_reply, 0);
-#else
-      zmq_recv(scafd, &scaf_experiment_reply, 0);
-#endif
-   zmq_msg_close(&scaf_experiment_reply);
+   zmq_msg_close(scaf_experiment_recv_msg);
 
    zmq_close(scafd);
    _Exit(0);
