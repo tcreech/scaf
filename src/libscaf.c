@@ -398,7 +398,6 @@ static void* scaf_init(void **context_p){
    int initval = PAPI_library_init(PAPI_VER_CURRENT);
    PAPI_thread_init((unsigned long (*)(void) )pthread_self);
    assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
-   assert(PAPI_multiplex_init() == PAPI_OK);
    // Do a test measurement.
    {
       float ipc, ptime;
@@ -782,7 +781,6 @@ static inline void scaf_experiment_start(void){
       int initval = PAPI_library_init(PAPI_VER_CURRENT);
       PAPI_thread_init((unsigned long (*)(void) )pthread_self);
       assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
-      assert(PAPI_multiplex_init() == PAPI_OK);
 
       float ipc, ptime;
       long long int ins;
