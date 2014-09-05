@@ -151,11 +151,7 @@ static void inline apply_affinity_partitioning(void){
       total_count++;
    }
 
-#ifdef __KNC__
    const int affinity_for_nonmalleable_only = 1;
-#else
-   const int affinity_for_nonmalleable_only = 0;
-#endif
 
    hwloc_cpuset_t client_total_set = hwloc_bitmap_alloc();
    hwloc_cpuset_t client_work_set = hwloc_bitmap_alloc();
