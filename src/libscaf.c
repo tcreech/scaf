@@ -603,8 +603,6 @@ int scaf_section_start(void* section){
 
 skip_math:
    if(scaf_lazy_math && lazy_math_skipped){
-      if(!(current_num_clients < 2))
-         lazy_math_skipped = 0;
       scaf_latest_efficiency_smooth = lowpass_reset();
    }
 
@@ -668,8 +666,8 @@ void scaf_section_end(void){
       return;
    }
 
-   if(scaf_lazy_math && (current_num_clients < 2 || scaf_disable_experiments)){
-      lazy_math_skipped = 1;
+   if(lazy_math_skipped){
+      lazy_math_skipped = 0;
       goto skip_math;
    }
 
