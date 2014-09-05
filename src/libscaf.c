@@ -339,7 +339,6 @@ static int scaf_connect(void *scafd){
 
 static void* scaf_init(void **context_p){
    scaf_mypid = getpid();
-   scaf_init_rtclock = rtclock();
    scaf_nullfd = open("/dev/null", O_WRONLY | O_NONBLOCK);
 
    scaf_num_online_hardware_threads = scaf_get_num_cpus();
@@ -400,8 +399,16 @@ static void* scaf_init(void **context_p){
    PAPI_thread_init((unsigned long (*)(void) )pthread_self);
    assert(initval == PAPI_VER_CURRENT || initval == PAPI_OK);
    assert(PAPI_multiplex_init() == PAPI_OK);
+   // Do a test measurement.
+   {
+      float ipc, ptime;
+      long long int ins;
+      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
+      assert(ret == PAPI_OK);
+   }
 #endif
    scaf_master_thread = pthread_self();
+   scaf_init_rtclock = rtclock();
 
    return requester;
 }
