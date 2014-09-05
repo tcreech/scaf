@@ -710,10 +710,10 @@ void scaf_section_end(void){
 
    if(scaf_notified_not_malleable)
 #ifdef __KNC__
-      scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) /
+      scaf_section_ipc = scaf_section_ipc *
          (current_threads * scaf_last_threads_per_core);
 #else
-      scaf_section_ipc = (scaf_section_ipc * scaf_num_online_hardware_threads) / current_threads;
+      scaf_section_ipc = scaf_section_ipc * current_threads;
 #endif //__KNC__
 
    current_section->last_time = scaf_section_duration;
