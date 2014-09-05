@@ -601,9 +601,10 @@ int scaf_section_start(void* section){
    }
 #endif
 
+   static float last_reported_efficiency = LOWPASS_INITIAL;
 skip_math:
    if(scaf_lazy_math && lazy_math_skipped){
-      scaf_latest_efficiency_smooth = lowpass_reset();
+      scaf_latest_efficiency_smooth = last_reported_efficiency;
    }
 
    scaf_skip_communication_for_section = scaf_communication_rate_limit(scaf_section_start_time);
@@ -617,6 +618,7 @@ skip_math:
       scaf_message->section = section;
 
       scaf_message->message_value.efficiency = scaf_latest_efficiency_smooth;
+      last_reported_efficiency = scaf_latest_efficiency_smooth;
 
 #if ZMQ_VERSION_MAJOR > 2
       zmq_sendmsg(scafd, &request, 0);
