@@ -645,6 +645,23 @@ skip_math:
 #endif //__KNC__
    }
 
+   if(!lazy_math_skipped){
+      // Reset/start the PAPI counters/timers so that we don't measure ZMQ
+#if(HAVE_LIBPAPI)
+      {
+         float ipc, ptime;
+         long long int ins;
+         int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
+         if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
+         scaf_section_start_process_time = pclock();
+      }
+#else
+      {
+         scaf_section_start_time = (float)(rtclock() - scaf_init_rtclock);
+      }
+#endif
+   }
+
    scaf_section_ipc = 0.0;
    scaf_in_parallel_section = 1;
 
