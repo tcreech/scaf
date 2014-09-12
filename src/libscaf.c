@@ -115,8 +115,6 @@ volatile int scaf_experiment_starting = 0;
 
 static int scaf_experiment_running = 0;
 static int scaf_lazy_experiments;
-static int scaf_lazy_math;
-static int lazy_math_skipped = 0;
 static int scaf_mypid;
 static int scaf_num_online_hardware_threads;
 static int scaf_nullfd;
@@ -372,12 +370,6 @@ static void* scaf_init(void **context_p){
    else
       scaf_lazy_experiments = 1;
 
-   char *lazymath = getenv("SCAF_LAZY_MATH");
-   if(lazymath)
-      scaf_lazy_math = atoi(lazymath);
-   else
-      scaf_lazy_math = 1;
-
    char *sectiondumps = getenv("SCAF_SECTION_DUMPS");
    if(sectiondumps)
      scaf_section_dumps = atoi(sectiondumps);
@@ -571,12 +563,6 @@ int scaf_section_start(void* section){
       scaf_section_efficiency = 0.5;
    }
 
-   if(scaf_lazy_math && (current_num_clients < 2 || scaf_disable_experiments)){
-      scaf_section_start_time = rtclock() - scaf_init_rtclock;
-      lazy_math_skipped = 1;
-      goto skip_math;
-   }
-
    // Compute results for reporting before this section
    float scaf_serial_efficiency = 1.0 / current_threads;
    float scaf_latest_efficiency_duration = (scaf_section_duration + scaf_serial_duration);
@@ -600,11 +586,6 @@ int scaf_section_start(void* section){
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
    }
 #endif
-
-   static float last_reported_efficiency = LOWPASS_INITIAL;
-skip_math:
-   if(scaf_lazy_math && lazy_math_skipped){
-      scaf_latest_efficiency_smooth = last_reported_efficiency;
    }
 
    scaf_skip_communication_for_section = scaf_communication_rate_limit(scaf_section_start_time);
@@ -618,7 +599,6 @@ skip_math:
       scaf_message->section = section;
 
       scaf_message->message_value.efficiency = scaf_latest_efficiency_smooth;
-      last_reported_efficiency = scaf_latest_efficiency_smooth;
 
 #if ZMQ_VERSION_MAJOR > 2
       zmq_sendmsg(scafd, &request, 0);
@@ -683,11 +663,6 @@ void scaf_section_end(void){
    if(!scafd_available){
       scaf_in_parallel_section = 0;
       return;
-   }
-
-   if(lazy_math_skipped){
-      lazy_math_skipped = 0;
-      goto skip_math;
    }
 
 #if(HAVE_LIBPAPI)
@@ -756,7 +731,6 @@ void scaf_section_end(void){
    }
 #endif // !__KNC__
 
-skip_math:
    scaf_in_parallel_section = 0;
    return;
 }
