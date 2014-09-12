@@ -1015,6 +1015,10 @@ static void* scaf_gomp_experiment_control(void *unused){
   // Block these signals until we're ready to handle them.
   pthread_sigmask(SIG_BLOCK, &sigs_int_alrm, &oldset);
 
+  // Meet the other thread at the barrier. It won't start running the proper
+  // instance of the section until we hit this barrier.
+  pthread_barrier_wait(&(scaf_experiment_desc.control_pthread_b));
+
   int expPid = fork();
   if(expPid==0){
     scaf_experiment_desc.experiment_pid = getpid();
@@ -1074,12 +1078,6 @@ static void* scaf_gomp_experiment_control(void *unused){
   __sol_proc_trace_sigs(expPid);
   __sol_proc_trace_syscalls(expPid);
 #endif
-
-  // Meet the other thread at the barrier. It won't start running the proper
-  // instance of the section until we hit this barrier. At this point in the
-  // experiment process, the instrumentation has been set up and we are just
-  // about to enter the work function.
-  pthread_barrier_wait(&(scaf_experiment_desc.control_pthread_b));
 
   int foundRaW = 0;
   int foundW = 0;
