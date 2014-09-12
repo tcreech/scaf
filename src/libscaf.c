@@ -942,7 +942,8 @@ void scaf_gomp_experiment_destroy(void){
       return;
 
 #if(! SCAF_PARALLEL_WAIT_FOR_EXPERIMENT)
-   {
+   if(scaf_experiment_desc.experiment_pid != 0){
+      debug_print(GREEN "Killing child (%d) with SIGALRM." RESET "\n", scaf_experiment_desc.experiment_pid);
       kill(scaf_experiment_desc.experiment_pid, SIGALRM);
    }
 #endif
