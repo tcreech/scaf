@@ -141,6 +141,14 @@ static double scaf_rate_limit_allowance;
 static double scaf_rate_limit_last_check;
 static int scaf_skip_communication_for_section  = 0;
 
+// For rate-limiting instrumentation efforts
+// Maximum will be max_comms/per
+static double scaf_math_rate_limit_per;
+static double scaf_math_rate_limit_max_comms;
+static double scaf_math_rate_limit_allowance;
+static double scaf_math_rate_limit_last_check;
+static int scaf_skip_math_for_section  = 0;
+
 static void* current_section_id;
 static int current_threads;
 static int current_num_clients = 1;
@@ -196,6 +204,27 @@ static inline int scaf_communication_rate_limit(double current_time){
    }
    else{
       scaf_rate_limit_allowance -= 1.0;
+      return 0; // allow the communication.
+   }
+}
+
+// Return 1 if we have been instrumenting too quickly/often. Implements a token
+// bucket. Our convention will be that rate limiting is disabled if
+// scaf_math_rate_limit_max_comms is negative.
+static inline int scaf_math_rate_limit(double current_time){
+   if(scaf_math_rate_limit_max_comms < 0)
+      return 0;
+
+   double time_passed = current_time - scaf_math_rate_limit_last_check;
+   scaf_math_rate_limit_last_check = current_time;
+   scaf_math_rate_limit_allowance += time_passed * (scaf_math_rate_limit_max_comms / scaf_math_rate_limit_per);
+   if(scaf_math_rate_limit_allowance > scaf_math_rate_limit_max_comms)
+      scaf_math_rate_limit_allowance = scaf_math_rate_limit_max_comms;
+   if(scaf_math_rate_limit_allowance < 1.0){
+      return 1; // do not allow the communication
+   }
+   else{
+      scaf_math_rate_limit_allowance -= 1.0;
       return 0; // allow the communication.
    }
 }
@@ -352,6 +381,16 @@ static void* scaf_init(void **context_p){
    scaf_rate_limit_per = 1.0;
    scaf_rate_limit_allowance = scaf_rate_limit_max_comms;
    scaf_rate_limit_last_check = 0;
+
+   // Math rate limiting
+   char *mathratelimit = getenv("SCAF_MATH_RATE_LIMIT");
+   if(mathratelimit)
+      scaf_math_rate_limit_max_comms = atof(mathratelimit);
+   else
+      scaf_math_rate_limit_max_comms = 32.0;
+   scaf_math_rate_limit_per = 1.0;
+   scaf_math_rate_limit_allowance = scaf_math_rate_limit_max_comms;
+   scaf_math_rate_limit_last_check = 0;
 
    // We used to call experiments "training." Obey the old environment variable
    // for now.
@@ -569,22 +608,35 @@ int scaf_section_start(void* section){
    float scaf_latest_efficiency = (scaf_section_efficiency * scaf_section_duration + scaf_serial_efficiency * scaf_serial_duration) / scaf_latest_efficiency_duration;
    float scaf_latest_efficiency_smooth = lowpass(scaf_latest_efficiency, scaf_latest_efficiency_duration, SCAF_LOWPASS_TIME_CONSTANT);
 
-   // Collect data for future reporting
-#if(HAVE_LIBPAPI)
-   {
-      float ipc, ptime;
-      long long int ins;
-      int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
-      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
-      scaf_section_start_process_time = pclock();
-      scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
+   // Based on the current time, decide whether or not to instrument this
+   // parallel section. The idea is to avoid the overhead of setting up
+   // hardware counters if we are entering/exiting parallel sections at a very
+   // high rate. (The results for very short sections are less likely to be
+   // useful anyway.) We will skip the instrumentation/math if we hit the rate
+   // limiter or if experiments are disabled.
+   double math_now = (float)(rtclock() - scaf_init_rtclock);
+   scaf_skip_math_for_section = scaf_disable_experiments || scaf_math_rate_limit(math_now);
 
-   }
-#else
-   {
-      scaf_section_start_time = (float)(rtclock() - scaf_init_rtclock);
+   if(scaf_skip_math_for_section){
+      scaf_section_start_time = math_now;
       scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
-   }
+   }else{
+      // Collect data for future reporting
+#if(HAVE_LIBPAPI)
+      {
+         float ipc, ptime;
+         long long int ins;
+         int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
+         if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
+         scaf_section_start_process_time = pclock();
+         scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
+
+      }
+#else
+      {
+         scaf_section_start_time = (float)(rtclock() - scaf_init_rtclock);
+         scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
+      }
 #endif
    }
 
@@ -648,51 +700,58 @@ void scaf_section_end(void){
       return;
    }
 
-#if(HAVE_LIBPAPI)
-   {
-      float rtime, ptime, ipc;
-      long long int ins;
-      int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &ptime, &ins, &ipc);
-      if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
-      scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-      scaf_section_end_process_time = pclock();
-      // The HL_MEASURE rate we get from PAPI is just for this thread, while it
-      // was running. This may not account for all of the wall time. Estimate
-      // the effective average rate over all threads by assuming that all
-      // threads had similar rates while they were running, and 0 otherwise.
-      float oldipc = ipc;
-      if(!scaf_notified_not_malleable)
-#ifdef __KNC__
-         ipc *=
-            min(1.0,
-            (scaf_section_end_process_time-scaf_section_start_process_time) /
-            (current_threads*scaf_last_threads_per_core*scaf_section_duration));
-#else
-         ipc *=
-            min(1.0,
-            (scaf_section_end_process_time-scaf_section_start_process_time) /
-            (current_threads*scaf_section_duration));
-#endif //__KNC__
-      scaf_section_ipc += ipc;
-   }
-#else
-   {
-      scaf_section_ipc += 0.5;
+   if(scaf_skip_math_for_section){
+      scaf_section_ipc = current_section->last_ipc;
       scaf_section_end_time = (float)(float)(rtclock() - scaf_init_rtclock);
       scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-   }
+   }else{
+#if(HAVE_LIBPAPI)
+      {
+         float rtime, ptime, ipc;
+         long long int ins;
+         int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &ptime, &ins, &ipc);
+         if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
+         scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
+         scaf_section_end_process_time = pclock();
+         // The HL_MEASURE rate we get from PAPI is just for this thread, while it
+         // was running. This may not account for all of the wall time. Estimate
+         // the effective average rate over all threads by assuming that all
+         // threads had similar rates while they were running, and 0 otherwise.
+         float oldipc = ipc;
+         if(!scaf_notified_not_malleable)
+#ifdef __KNC__
+            ipc *=
+               min(1.0,
+                     (scaf_section_end_process_time-scaf_section_start_process_time) /
+                     (current_threads*scaf_last_threads_per_core*scaf_section_duration));
+#else
+         ipc *=
+            min(1.0,
+                  (scaf_section_end_process_time-scaf_section_start_process_time) /
+                  (current_threads*scaf_section_duration));
+#endif //__KNC__
+         scaf_section_ipc += ipc;
+      }
+#else
+      {
+         scaf_section_ipc += 0.5;
+         scaf_section_end_time = (float)(float)(rtclock() - scaf_init_rtclock);
+         scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
+      }
 #endif
 
-   if(scaf_notified_not_malleable)
+      if(scaf_notified_not_malleable)
 #ifdef __KNC__
-      scaf_section_ipc = scaf_section_ipc *
-         (current_threads * scaf_last_threads_per_core);
+         scaf_section_ipc = scaf_section_ipc *
+            (current_threads * scaf_last_threads_per_core);
 #else
       scaf_section_ipc = scaf_section_ipc * current_threads;
 #endif //__KNC__
 
+      current_section->last_ipc  = scaf_section_ipc;
+   }
+
    current_section->last_time = scaf_section_duration;
-   current_section->last_ipc  = scaf_section_ipc;
    scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->experiment_serial_ipc);
 #ifdef __KNC__
    debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads*scaf_last_threads_per_core);
