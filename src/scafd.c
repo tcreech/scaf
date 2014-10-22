@@ -13,7 +13,6 @@
 #include <assert.h>
 #include <math.h>
 #include <zmq.h>
-#include <curses.h>
 #include <time.h>
 #include <strings.h>
 #include <sys/time.h>
@@ -91,7 +90,6 @@ static int chunksize = -1;
 static int nobgload = 0;
 static int equipartitioning = 0;
 static int eq_offset = 0;
-static int curses_interface = 0;
 static int text_interface = 0;
 static int unresponsive_threshold = DEFAULT_UNRESPONSIVE_THRESHOLD;
 #if HAVE_LIBHWLOC
@@ -330,7 +328,7 @@ float proc_get_cpus_used(void)
             if(procdir_pid == 0)
                 continue;
 
-            bool is_scaf_pid = 0;
+            int is_scaf_pid = 0;
             if(pid_is_scaf_controlled(procdir_pid, pid_list, list_size)) {
                 is_scaf_pid = 1;
             }
@@ -471,53 +469,6 @@ void text_print_clients(void)
     }
     printf("\n");
     fflush(stdout);
-}
-
-void curses_print_clients(void)
-{
-    move(0,0);
-    clrtobot();
-    int max = HASH_COUNT(clients);
-    start_color();
-    init_pair(1, COLOR_WHITE, COLOR_BLUE);
-    init_pair(2, COLOR_WHITE, COLOR_RED);
-
-    attron(COLOR_PAIR(1));
-    attron(A_BOLD);
-    printw("scafd: Running, managing %d hardware contexts. ", max_threads);
-#if(HAVE_LIBPAPI)
-    printw("Runtime experiments supported.\n");
-#else
-    attroff(COLOR_PAIR(1));
-    attron(COLOR_PAIR(2));
-    printw("WARNING: Runtime experiments NOT supported.\n");
-    attroff(COLOR_PAIR(2));
-    attron(COLOR_PAIR(1));
-#endif
-    printw("%d clients. Uncontrollable utilization: %f\n", max, bg_utilization);
-    attroff(COLOR_PAIR(1));
-    attroff(A_BOLD);
-    hline(0, 1024);
-    move(3,0);
-    attron(A_BOLD);
-
-    if(max > 0) {
-        //printw("PID\tTHREADS\tSECTION\tTIME/IPC\tEFFICIENCY\n");
-        attron(COLOR_PAIR(2));
-        printw("%-06s%-09s%-08s%-09s%-10s%-10s%-10s\n", "PID", "NAME", "THREADS", "SECTION", "TIME", "IPC", "EFFICIENCY");
-        attroff(COLOR_PAIR(2));
-        attroff(A_BOLD);
-        scaf_client *current, *tmp;
-        HASH_ITER(hh, clients, current, tmp) {
-            printw("%-06d%-09s%-08d%-09p%-10f%-10f%-10f\n", current->pid, current->name, current->threads, current->current_section, 0.0, 0.0, current->metric);
-        }
-    } else {
-        attron(COLOR_PAIR(2));
-        printw("(No SCAF processes found.)\n");
-        attroff(COLOR_PAIR(2));
-        attroff(A_BOLD);
-    }
-    refresh();
 }
 
 int perform_client_request(scaf_client_message *client_message, scaf_daemon_message *daemon_message)
@@ -762,23 +713,6 @@ void text_scoreboard_body(void* data)
     }
 }
 
-void curses_scoreboard_body(void* data)
-{
-    WINDOW *wnd;
-    wnd = initscr();
-    (void)wnd; // Quiet the compiler
-    noecho();
-    clear();
-    refresh();
-
-    while(1) {
-        RD_LOCK_CLIENTS;
-        curses_print_clients();
-        UNLOCK_CLIENTS;
-        usleep(250000);
-    }
-}
-
 void reaper_body(void* data)
 {
     while(1) {
@@ -842,22 +776,13 @@ int main(int argc, char **argv)
 {
 
     int c;
-    while( (c = getopt(argc, argv, "ct:heqbavu:E:C:")) != -1) {
+    while( (c = getopt(argc, argv, "t:hebavu:E:C:")) != -1) {
         switch(c) {
-        case 'q':
-            curses_interface = 0;
-            text_interface = 0;
-            break;
         case 'e':
             equipartitioning = 1;
             break;
-        case 'c':
-            curses_interface = 1;
-            text_interface = 0;
-            break;
         case 't':
             text_interface = atoi(optarg);
-            curses_interface = 0;
             break;
         case 'u':
             if(atoi(optarg)>0)
@@ -886,11 +811,9 @@ int main(int argc, char **argv)
             printf("\n");
             printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n] [-u n] [-C n]\n"
                    "\t-h\tdisplay this message\n"
-                   "\t-q\tbe quiet: no status interface\n"
                    "\t-b\tdon't monitor background load: assume load of 0\n"
                    "%s"
                    "\t-e\tonly do strict equipartitioning\n"
-                   "\t-c\tuse a curses status interface\n"
                    "\t-t n\tuse a plain text status interface, printing every n seconds\n"
                    "\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n"
                    "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n",
@@ -930,9 +853,7 @@ int main(int argc, char **argv)
     void (*referee_body)(void *) = equipartitioning?&equi_referee_body:&maxspeedup_referee_body;
 
     pthread_rwlock_init(&clients_lock, NULL);
-    if(curses_interface)
-        pthread_create(&scoreboard, NULL, (void *(*)(void*))&curses_scoreboard_body, NULL);
-    else if(text_interface)
+    if(text_interface)
         pthread_create(&scoreboard, NULL, (void *(*)(void*))&text_scoreboard_body, NULL);
     pthread_create(&referee, NULL, (void *(*)(void*))referee_body, NULL);
     pthread_create(&reaper, NULL, (void *(*)(void*))&reaper_body, NULL);
