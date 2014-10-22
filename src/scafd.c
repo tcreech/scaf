@@ -88,9 +88,6 @@ static int chunksize = -1;
 #define RW_LOCK_CLIENTS pthread_rwlock_wrlock(&clients_lock)
 #define UNLOCK_CLIENTS pthread_rwlock_unlock(&clients_lock)
 
-#define MAX(a,b) ((a > b) ? a : b)
-#define MIN(a,b) ((a < b) ? a : b)
-
 static int nobgload = 0;
 static int equipartitioning = 0;
 static int eq_offset = 0;
@@ -425,7 +422,7 @@ void get_name_from_pid(int pid, char *buf)
 #endif //__linux__
 #if defined(__sun)
     psinfo_t pi = *__sol_get_proc_info(pid);
-    size_t namelen = strnlen(pi.pr_fname, MIN(PRFNSZ, SCAF_MAX_CLIENT_NAME_LEN));
+    size_t namelen = strnlen(pi.pr_fname, min(PRFNSZ, SCAF_MAX_CLIENT_NAME_LEN));
     strncpy(buf, pi.pr_fname, namelen);
 #endif //__sun
 }
@@ -634,7 +631,7 @@ void maxspeedup_referee_body(void* data)
 
         HASH_ITER(hh, clients, current, tmp) {
             if(current->threads > 1)
-                current->log_factor = MAX((current->metric * current->threads - 1.0),1.0)/log(current->threads);
+                current->log_factor = max((current->metric * current->threads - 1.0),1.0)/log(current->threads);
             else
                 current->log_factor = SERIAL_LOG_FACTOR;
 
@@ -642,7 +639,7 @@ void maxspeedup_referee_body(void* data)
         }
 
         int available_threads = max_threads - ceil(bg_utilization - 0.5);
-        available_threads = MAX(available_threads, 1);
+        available_threads = max(available_threads, 1);
 
         i=0;
         HASH_ITER(hh, clients, current, tmp) {
