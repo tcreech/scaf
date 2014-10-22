@@ -828,11 +828,15 @@ static inline void scaf_experiment_start(void){
    }
 #endif
 
+#if !defined(__sun)
    // Initialize anything that will be needed in `scaf_experiment_end'. The
    // reason we do this ahead of time is because `scaf_experiment_end' will
    // potentially be reached as a signal handler, and we want to minimize the
-   // number of dangerous things (e.g., allocs) we do in a signal handler.
+   // number of dangerous things (e.g., allocs) we do in a signal handler. (On
+   // SunOS we defer all of this until the signal handler because it's too
+   // difficult to get the tracing facilities to cope with the ZMQ threads.)
    scaf_experiment_end_prep();
+#endif //__sun
 
    struct sigaction new_sa;
    sigemptyset(&new_sa.sa_mask);
@@ -910,6 +914,15 @@ static inline void scaf_experiment_end(int sig){
    }
 #endif
 
+#if defined(__sun)
+   // On SunOS we actually do the prep all in the signal handler. This is
+   // because while the SunOS are very nice and sophisticated, I would have to
+   // rewrite the tracing code above to deal with the extra threads introduced
+   // by starting up zmq. By doing the prep here, after the tracing, we ensure
+   // that the tracing only involves 1 lwp.
+   scaf_experiment_end_prep();
+#endif //__sun
+
    // The zmq messages here should already have been initialized outside of the
    // signal handler, including buffers.
 #if ZMQ_VERSION_MAJOR > 2
@@ -950,6 +963,11 @@ static int inline scaf_will_create_experiment(void){
       return 0;
    }
 #endif
+
+   // Certain sections are banished due to bugs in SCAF. (E.g., can't get my
+   // code to check if malloc is in the backtrace working on Solaris.)
+   if(current_section->section_id == 0x10002be40)
+      return 0;
 
    return 1;
 }
