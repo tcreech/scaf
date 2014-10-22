@@ -104,7 +104,7 @@ static int max_threads = -1;
 static float bg_utilization;
 
 static int stop_referee = 0;
-pthread_t referee, reaper, scoreboard, lookout;
+static pthread_t referee, reaper, scoreboard, lookout;
 static pthread_rwlock_t clients_lock;
 
 static double startuptime;
