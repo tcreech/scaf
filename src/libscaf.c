@@ -601,6 +601,9 @@ int scaf_section_start(void* section){
       scaf_section_duration = 0.01;
       scaf_section_efficiency = 0.5;
    }
+   if(scaf_serial_duration < 0.000000001){
+      scaf_serial_duration = 0.000000001;
+   }
 
    // Compute results for reporting before this section
    float scaf_serial_efficiency = 1.0 / current_threads;
