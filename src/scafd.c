@@ -100,7 +100,7 @@ static int affinity = 0;
 
 static scaf_client *clients = NULL;
 
-static int max_threads;
+static int max_threads = -1;
 static float bg_utilization;
 
 static int stop_referee = 0;
@@ -776,7 +776,7 @@ int main(int argc, char **argv)
 {
 
     int c;
-    while( (c = getopt(argc, argv, "t:hebavu:E:C:")) != -1) {
+    while( (c = getopt(argc, argv, "t:hebavu:E:C:T:")) != -1) {
         switch(c) {
         case 'e':
             equipartitioning = 1;
@@ -805,22 +805,32 @@ int main(int argc, char **argv)
             if(atoi(optarg)>0)
                 chunksize = atoi(optarg);
             break;
+        case 'T':
+            if(atoi(optarg)>0)
+                max_threads = atoi(optarg);
+            else
+                max_threads = num_online_processors();
+            if(max_threads < 1)
+                max_threads = 1;
+            break;
         case 'h':
         default:
             printf("scafd, %s\n%s\n", PACKAGE_STRING, PACKAGE_BUGREPORT);
             printf("\n");
-            printf("Usage: %s [-h] [-q] [-e] [-b] %s[-c] [-t n] [-u n] [-C n]\n"
+            printf("Usage: %s [-h] [-b] %s[-e] [-t n] [-u n] [-C n] [-T n]\n"
                    "\t-h\tdisplay this message\n"
                    "\t-b\tdon't monitor background load: assume load of 0\n"
                    "%s"
                    "\t-e\tonly do strict equipartitioning\n"
                    "\t-t n\tuse a plain text status interface, printing every n seconds\n"
                    "\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n"
-                   "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n",
+                   "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n"
+                   "\t-T n\tuse n threads for all processes. (default: %d)\n",
                    argv[0],
                    affinity?"[-a] ":"",
                    affinity?"\t-a\tdisable affinity-based parallelism control\n":"",
-                   (int)DEFAULT_UNRESPONSIVE_THRESHOLD);
+                   (int)DEFAULT_UNRESPONSIVE_THRESHOLD,
+                   num_online_processors());
             exit(1);
             break;
         }
@@ -835,18 +845,14 @@ int main(int argc, char **argv)
     apply_affinity_partitioning();
 #endif
 
-    max_threads = num_online_processors();
     bg_utilization = proc_get_cpus_used();
     startuptime = rtclock();
 
+    if(max_threads == -1) {
+        max_threads = num_online_processors();
+    }
     if(chunksize == -1) {
-#if defined(__KNC__)
         chunksize = 1;
-#elif defined(__amd64__)
-        chunksize = 4;
-#else
-        chunksize = 1;
-#endif
     }
     assert(chunksize <= max_threads && "Impossible chunksize!");
 
