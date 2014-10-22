@@ -41,60 +41,62 @@
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9
 
-static inline double pclock(){
-   struct rusage ru;
-   getrusage(RUSAGE_SELF, &ru);
-   return (ru.ru_utime.tv_sec + ru.ru_utime.tv_usec * 1.0e-6);
+static inline double pclock()
+{
+    struct rusage ru;
+    getrusage(RUSAGE_SELF, &ru);
+    return (ru.ru_utime.tv_sec + ru.ru_utime.tv_usec * 1.0e-6);
 }
 
-static inline double rtclock(){
-   struct timeval Tp;
-   gettimeofday (&Tp, NULL);
-   return (Tp.tv_sec + Tp.tv_usec * 1.0e-6);
+static inline double rtclock()
+{
+    struct timeval Tp;
+    gettimeofday (&Tp, NULL);
+    return (Tp.tv_sec + Tp.tv_usec * 1.0e-6);
 }
 
 enum scaf_message_purpose {
-   SCAF_NEW_CLIENT,
-   SCAF_FORMER_CLIENT,
-   SCAF_SECTION_START,
-   SCAF_NOT_MALLEABLE,
-   SCAF_DAEMON_FEEDBACK,
-   SCAF_EXPT_START,
-   SCAF_EXPT_STOP,
+    SCAF_NEW_CLIENT,
+    SCAF_FORMER_CLIENT,
+    SCAF_SECTION_START,
+    SCAF_NOT_MALLEABLE,
+    SCAF_DAEMON_FEEDBACK,
+    SCAF_EXPT_START,
+    SCAF_EXPT_STOP,
 };
 
 typedef struct {
-   void* section_id;
-   float last_time;
-   float last_ipc;
-   int experiment_complete;
-   int experiment_threads;
-   float experiment_serial_ipc;
-   float experiment_parallel_ipc;
-   float experiment_ipc_speedup;
-   float experiment_ipc_eff;
-   UT_hash_handle hh;
+    void* section_id;
+    float last_time;
+    float last_ipc;
+    int experiment_complete;
+    int experiment_threads;
+    float experiment_serial_ipc;
+    float experiment_parallel_ipc;
+    float experiment_ipc_speedup;
+    float experiment_ipc_eff;
+    UT_hash_handle hh;
 } scaf_client_section;
 
 // The float alignment is important for the Xeon Phi 5110p. If you're using
 // some compiler that doesn't support it it will probably be ok to remove it.
 typedef struct {
-   void* section;
-   union message_value_t {
-      float efficiency __attribute__((aligned(16)));
-      int experiment_pid;
-   } message_value;
-   int pid;
-   enum scaf_message_purpose message;
+    void* section;
+    union message_value_t {
+        float efficiency __attribute__((aligned(16)));
+        int experiment_pid;
+    } message_value;
+    int pid;
+    enum scaf_message_purpose message;
 } scaf_client_message;
 
 typedef struct {
-   enum scaf_message_purpose message;
-   int threads;
-   int num_clients;
+    enum scaf_message_purpose message;
+    int threads;
+    int num_clients;
 #ifdef __KNC__
-   int core_offset;
-   int threads_per_core;
+    int core_offset;
+    int threads_per_core;
 #endif //__KNC__
 } scaf_daemon_message;
 
@@ -107,11 +109,11 @@ extern volatile int scaf_experiment_starting;
 extern volatile int scaf_notified_not_malleable;
 
 typedef struct {
-   void (*fn) (void *);
-   void *data;
-   pthread_t control_pthread;
-   pthread_barrier_t control_pthread_b;
-   pid_t experiment_pid;
+    void (*fn) (void *);
+    void *data;
+    pthread_t control_pthread;
+    pthread_barrier_t control_pthread_b;
+    pid_t experiment_pid;
 } scaf_client_experiment_description;
 
 void scaf_retire();
@@ -129,53 +131,54 @@ void scaf_gomp_experiment_destroy(void);
 int scaf_gomp_training_create(void (*fn) (void*), void *data);
 void scaf_gomp_training_destroy(void);
 
-static inline int scaf_get_num_cpus(void){
-   return sysconf(_SC_NPROCESSORS_ONLN);
+static inline int scaf_get_num_cpus(void)
+{
+    return sysconf(_SC_NPROCESSORS_ONLN);
 }
 
 struct proc_stat {
-   int pid;         // %d
-   char comm[256];    // %s
-   char state;       // %c
-   int ppid;        // %d
-   int pgrp;       // %d
-   int session;      // %d
-   int tty_nr;         // %d
-   int tpgid;         // %d
-   unsigned long flags; // %lu
-   unsigned long minflt;  // %lu
-   unsigned long cminflt;   // %lu
-   unsigned long majflt;   // %lu
-   unsigned long cmajflt; // %lu
-   unsigned long utime;  // %lu
-   unsigned long stime;    // %lu
-   long cutime;     // %ld
-   long cstime;    // %ld
-   long priority;    // %ld
-   long nice;       // %ld
-   long num_threads;     // %ld
-   long itrealvalue;    // %ld
-   unsigned long starttime;  // %lu
-   unsigned long vsize;  // %lu
-   long rss;         // %ld
-   unsigned long rlim;    // %lu
-   unsigned long startcode; // %lu
-   unsigned long endcode;  // %lu
-   unsigned long startstack; // %lu
-   unsigned long kstkesp;   // %lu
-   unsigned long kstkeip;  // %lu
-   unsigned long signal;  // %lu
-   unsigned long blocked;   // %lu
-   unsigned long sigignore;   // %lu
-   unsigned long sigcatch;   // %lu
-   unsigned long wchan;  // %lu
-   unsigned long nswap; // %lu
-   unsigned long cnswap;  // %lu
-   int exit_signal;      // %d
-   int processor;    // %d
-   unsigned long rt_priority;   // %lu
-   unsigned long policy; // %lu
-   unsigned long long delayacct_blkio_ticks; // %llu
+    int pid;         // %d
+    char comm[256];    // %s
+    char state;       // %c
+    int ppid;        // %d
+    int pgrp;       // %d
+    int session;      // %d
+    int tty_nr;         // %d
+    int tpgid;         // %d
+    unsigned long flags; // %lu
+    unsigned long minflt;  // %lu
+    unsigned long cminflt;   // %lu
+    unsigned long majflt;   // %lu
+    unsigned long cmajflt; // %lu
+    unsigned long utime;  // %lu
+    unsigned long stime;    // %lu
+    long cutime;     // %ld
+    long cstime;    // %ld
+    long priority;    // %ld
+    long nice;       // %ld
+    long num_threads;     // %ld
+    long itrealvalue;    // %ld
+    unsigned long starttime;  // %lu
+    unsigned long vsize;  // %lu
+    long rss;         // %ld
+    unsigned long rlim;    // %lu
+    unsigned long startcode; // %lu
+    unsigned long endcode;  // %lu
+    unsigned long startstack; // %lu
+    unsigned long kstkesp;   // %lu
+    unsigned long kstkeip;  // %lu
+    unsigned long signal;  // %lu
+    unsigned long blocked;   // %lu
+    unsigned long sigignore;   // %lu
+    unsigned long sigcatch;   // %lu
+    unsigned long wchan;  // %lu
+    unsigned long nswap; // %lu
+    unsigned long cnswap;  // %lu
+    int exit_signal;      // %d
+    int processor;    // %d
+    unsigned long rt_priority;   // %lu
+    unsigned long policy; // %lu
+    unsigned long long delayacct_blkio_ticks; // %llu
 };
 
 #ifdef SCAF_DISABLE_COLOR
@@ -229,3 +232,4 @@ struct proc_stat {
    do { if (1) fprintf(stderr, __VA_ARGS__); } while (0)
 
 #endif //defined SCAF_H
+
