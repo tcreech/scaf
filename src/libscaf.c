@@ -743,6 +743,10 @@ void scaf_section_end(void)
             if(!scaf_notified_not_malleable)
                 ipc *= min(1.0, (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration);
 
+#ifdef __sun
+            ipc /= (current_threads < 4 ? current_threads : 4);
+#endif
+
             scaf_section_ipc += ipc;
         }
 #else
