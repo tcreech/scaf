@@ -982,7 +982,7 @@ static int inline scaf_will_create_experiment(void)
 
     // Certain sections are banished due to bugs in SCAF. (E.g., can't get my
     // code to check if malloc is in the backtrace working on Solaris.)
-    if(current_section->section_id == 0x10002be40)
+    if(current_section->section_id == (void*)0x10002be40)
         return 0;
 
     return 1;
