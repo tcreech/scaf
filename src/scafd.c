@@ -35,6 +35,7 @@ typedef struct {
     void* current_section;
     unsigned checkins;
     double last_checkin_time;
+    double last_expt_time;
     float metric;
     float log_factor;
     char name[SCAF_MAX_CLIENT_NAME_LEN+1];
@@ -89,6 +90,7 @@ static int chunksize = -1;
 
 static int nobgload = 0;
 static int equipartitioning = 0;
+static int experiment_equipartitioning = 0;
 static int eq_offset = 0;
 static int text_interface = 0;
 static int unresponsive_threshold = DEFAULT_UNRESPONSIVE_THRESHOLD;
@@ -435,6 +437,7 @@ void add_client(int client_pid, int threads, void* client_section)
     c->metric = 1.0;
     c->checkins = 1;
     c->last_checkin_time = rtclock();
+    c->last_expt_time = rtclock();
     c->malleable = 1;
     c->experimenting = 0;
 #ifdef HAVE_LIBHWLOC
@@ -541,6 +544,7 @@ int perform_client_request(scaf_client_message *client_message, scaf_daemon_mess
         scaf_client *client = find_client(client_pid);
         assert(client);
         client->experimenting = 0;
+        client->last_expt_time = rtclock();
         UNLOCK_CLIENTS;
         //num_clients is bogus here. We don't want to spent the time to
         //count the clients.
@@ -573,9 +577,12 @@ void maxspeedup_referee_body(void* data)
         RW_LOCK_CLIENTS;
         scaf_client *current, *tmp;
 
+        double now = rtclock();
         float metric_sum = 0.0;
-        int num_clients = HASH_COUNT(clients);
+        unsigned num_clients = HASH_COUNT(clients);
+        unsigned num_experimenting = 0;
         int i;
+        double time_since_expt = now - startuptime;
 
         intpart = realloc(intpart, sizeof(int)*num_clients);
         floatpart = realloc(floatpart, sizeof(float)*num_clients);
@@ -587,6 +594,8 @@ void maxspeedup_referee_body(void* data)
                 current->log_factor = SERIAL_LOG_FACTOR;
 
             metric_sum += current->log_factor;
+            time_since_expt = min(time_since_expt, now - current->last_expt_time);
+            num_experimenting += (current->experimenting ? 1 : 0);
         }
 
         int available_threads = max_threads - ceil(bg_utilization - 0.5);
@@ -598,7 +607,10 @@ void maxspeedup_referee_body(void* data)
             floatpart[i++] = exact_ration;
         }
 
-        intpart_from_floatpart_chunked(available_threads, intpart, floatpart, chunksize, num_clients);
+        if(experiment_equipartitioning && num_experimenting > 0 || time_since_expt < 2)
+            intpart_equipartition_chunked(available_threads, intpart, chunksize, num_clients);
+        else
+            intpart_from_floatpart_chunked(available_threads, intpart, floatpart, chunksize, num_clients);
 
         i=0;
         HASH_ITER(hh, clients, current, tmp) {
@@ -776,8 +788,11 @@ int main(int argc, char **argv)
 {
 
     int c;
-    while( (c = getopt(argc, argv, "t:hebavu:E:C:T:")) != -1) {
+    while( (c = getopt(argc, argv, "t:hebavu:E:C:T:x")) != -1) {
         switch(c) {
+        case 'x':
+            experiment_equipartitioning = 1;
+            break;
         case 'e':
             equipartitioning = 1;
             break;
@@ -825,7 +840,8 @@ int main(int argc, char **argv)
                    "\t-t n\tuse a plain text status interface, printing every n seconds\n"
                    "\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n"
                    "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n"
-                   "\t-T n\tuse n threads for all processes. (default: %d)\n",
+                   "\t-T n\tuse n threads for all processes. (default: %d)\n"
+                   "\t-x\tdo equipartitioning during experiments. (default: disabled)\n",
                    argv[0],
                    affinity?"[-a] ":"",
                    affinity?"\t-a\tdisable affinity-based parallelism control\n":"",
