@@ -649,7 +649,7 @@ int scaf_section_start(void* section)
             long long int ins;
             int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
             if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
-            scaf_section_start_process_time = pclock();
+            scaf_section_start_process_time = ptime;
             scaf_serial_duration = scaf_section_start_time - scaf_section_end_time;
 
         }
@@ -734,24 +734,15 @@ void scaf_section_end(void)
             int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &ptime, &ins, &ipc);
             if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
             scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-            scaf_section_end_process_time = pclock();
+            scaf_section_end_process_time = ptime;
             // The HL_MEASURE rate we get from PAPI is just for this thread, while it
             // was running. This may not account for all of the wall time. Estimate
             // the effective average rate over all threads by assuming that all
             // threads had similar rates while they were running, and 0 otherwise.
             float oldipc = ipc;
             if(!scaf_notified_not_malleable)
-#ifdef __KNC__
-                ipc *=
-                min(1.0,
-                (scaf_section_end_process_time-scaf_section_start_process_time) /
-                (current_threads*scaf_last_threads_per_core*scaf_section_duration));
-#else
-                ipc *=
-                min(1.0,
-                (scaf_section_end_process_time-scaf_section_start_process_time) /
-                (current_threads*scaf_section_duration));
-#endif //__KNC__
+                ipc *= min(1.0, (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration;
+
             scaf_section_ipc += ipc;
         }
 #else
@@ -844,7 +835,7 @@ static inline void scaf_experiment_start(void)
         PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
         int ret = PAPI_HL_MEASURE(&scaf_section_start_time, &ptime, &ins, &ipc);
         if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
-        scaf_section_start_process_time = pclock();
+        scaf_section_start_process_time = ptime;
     }
 #else
     {
@@ -915,7 +906,7 @@ static inline void scaf_experiment_end(int sig)
         int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &ptime, &ins, &ipc);
         if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
         scaf_section_duration = (scaf_section_end_time - scaf_section_start_time);
-        scaf_section_end_process_time = pclock();
+        scaf_section_end_process_time = ptime;
         // The HL_MEASURE rate we get from PAPI is just for this thread, while it
         // was running. This may not account for all of the wall time. Estimate
         // the effective average rate over all threads by assuming that all
@@ -923,9 +914,7 @@ static inline void scaf_experiment_end(int sig)
         float oldipc = ipc;
         if(!scaf_notified_not_malleable &&
                 scaf_section_end_process_time != scaf_section_start_process_time)
-            ipc = ipc *
-                  (scaf_section_end_process_time-scaf_section_start_process_time) /
-                  (scaf_section_duration);
+            ipc = ipc * (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration;
 
         scaf_section_ipc = ipc;
     }
