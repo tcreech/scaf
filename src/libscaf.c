@@ -741,7 +741,7 @@ void scaf_section_end(void)
             // threads had similar rates while they were running, and 0 otherwise.
             float oldipc = ipc;
             if(!scaf_notified_not_malleable)
-                ipc *= min(1.0, (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration;
+                ipc *= min(1.0, (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration);
 
             scaf_section_ipc += ipc;
         }
