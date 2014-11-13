@@ -1211,30 +1211,13 @@ static void* scaf_gomp_experiment_control(void *unused)
             if(signal>=0 && signal==SIGALRM) {
 #endif //__sun
 
-                // The experiment has run long enough. We will stop it, but first let the
-                // function run for another small period of time. This is just an easy
-                // way to ensure that our experiment measurements have a minimum allowed
-                // runtime.
+                // The experiment has run long enough.
 #if defined(__linux__)
-                ptrace(PTRACE_CONT, expPid, NULL, 0);
-#endif //__linux__
-#if defined(__sun)
-                __sol_proc_run_clearsigs(expPid);
-#endif //__sun
-                usleep(100000);
-#if defined(__linux__)
-                kill(expPid, SIGALRM);
-                waitpid(expPid, &status, 0);
-#endif //__linux__
-#if defined(__sun)
-                __sol_proc_setsig(expPid, SIGALRM);
-                __sol_proc_stop_wait(expPid);
-#endif //__sun
-#if defined(__linux__)
-                ptrace(PTRACE_CONT, expPid, NULL, SIGALRM);
+                ptrace(PTRACE_DETACH, expPid, NULL, SIGALRM);
 #endif //__linux__
 #if defined(__sun)
                 __sol_proc_notrace(expPid);
+                __sol_proc_setsig(expPid, SIGALRM);
                 __sol_proc_run(expPid);
 #endif //__sun
                 break;
