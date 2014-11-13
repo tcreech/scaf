@@ -133,6 +133,10 @@ static float scaf_serial_duration;
 static float scaf_section_efficiency;
 static pthread_t scaf_master_thread;
 
+// The minimum amount of time we'll run an experiment for. Amounts to a call to
+// usleep, which can be expensive.
+static useconds_t scaf_expt_min_useconds;
+
 // For rate-limiting communications
 // Maximum will be max_comms/per
 static double scaf_rate_limit_per;
@@ -384,6 +388,16 @@ static void* scaf_init(void **context_p)
     scaf_num_online_hardware_threads = scaf_get_num_cpus();
 
     scaf_init_signal_handler();
+
+    // Set up fork handlers for this master thread.
+    pthread_atfork(scaf_fork_prepare, scaf_parent_postfork, NULL);
+
+    // Minimum experiment runtime
+    char *minexpt = getenv("SCAF_EXPERIMENT_MIN_USECONDS");
+    if(minexpt)
+        scaf_expt_min_useconds = (useconds_t)atoll(minexpt);
+    else
+        scaf_expt_min_useconds = 100000;
 
     // Initialize stuff for rate limiting
     char *ratelimit = getenv("SCAF_COMM_RATE_LIMIT");
@@ -1211,6 +1225,27 @@ static void* scaf_gomp_experiment_control(void *unused)
             if(signal>=0 && signal==SIGALRM) {
 #endif //__sun
 
+                if(scaf_expt_min_useconds > 0){
+                    // The experiment has run long enough. We will stop it, but first let the
+                    // function run for another small period of time. This is just an easy
+                    // way to ensure that our experiment measurements have a minimum allowed
+                    // runtime.
+#if defined(__linux__)
+                    ptrace(PTRACE_CONT, expPid, NULL, 0);
+#endif //__linux__
+#if defined(__sun)
+                    __sol_proc_run_clearsigs(expPid);
+#endif //__sun
+                    usleep(scaf_expt_min_useconds);
+#if defined(__linux__)
+                    kill(expPid, SIGALRM);
+                    waitpid(expPid, &status, 0);
+#endif //__linux__
+#if defined(__sun)
+                    __sol_proc_setsig(expPid, SIGALRM);
+                    __sol_proc_stop_wait(expPid);
+#endif //__sun
+                }
                 // The experiment has run long enough.
 #if defined(__linux__)
                 ptrace(PTRACE_DETACH, expPid, NULL, SIGALRM);
