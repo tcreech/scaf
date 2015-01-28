@@ -295,6 +295,8 @@ static void* scaf_init(void **context_p);
 static int scaf_connect(void *scafd);
 static scaf_client_section*  scaf_add_client_section(void *section_id);
 static scaf_client_section* scaf_find_client_section(void *section_id);
+static void scaf_fork_prepare(void);
+static void scaf_parent_postfork(void);
 
 static scaf_client_section inline *scaf_add_client_section(void *section_id)
 {
@@ -1000,6 +1002,18 @@ static int inline scaf_will_create_experiment(void)
         return 0;
 
     return 1;
+}
+
+/* This is only used with the nanomsg version */
+static void scaf_fork_prepare(void)
+{
+    return;
+}
+
+/* This is only used with the nanomsg version */
+static void scaf_parent_postfork(void)
+{
+    return;
 }
 
 int scaf_gomp_experiment_create(void (*fn) (void*), void *data)
