@@ -48,13 +48,9 @@
 #error unsupported architecture
 #endif
 
+#else  //__linux__
+#error "Sadly, only Linux is supported in this version of SCAF."
 #endif //__linux__
-
-#if defined(__sun)
-#include "solaris_trace_utils.h"
-// Solaris has actual APIs for tracing syscalls and peeking at arguments, so
-// none of the above hackery required for Linux is necessary.
-#endif //__sun
 
 #define SCAFD_TIMEOUT_SECONDS 1
 
@@ -70,29 +66,14 @@
 
 // Limit measured efficiency to this value. This can restrict the effects of
 // timing glitches resulting in crazy values.
-#ifdef __KNC__
-#define SCAF_MEASURED_EFF_LIMIT 5.0
-#else
 #define SCAF_MEASURED_EFF_LIMIT 2.0
-#endif //__KNC__
 
-#if defined(__sun)
 #define SCAF_LOWPASS_TIME_CONSTANT (4.0)
-#elif defined(__KNC__)
-#define SCAF_LOWPASS_TIME_CONSTANT (4.0)
-#else //__sun
-#define SCAF_LOWPASS_TIME_CONSTANT (4.0)
-#endif //__sun
 
 // PAPI high-level event to measure scalability by
 //#define PAPI_HL_MEASURE PAPI_flops
 //#define PAPI_HL_MEASURE PAPI_flips
 #define PAPI_HL_MEASURE PAPI_ipc
-
-#ifdef __KNC__
-int scaf_last_core_offset;
-int scaf_last_threads_per_core;
-#endif //__KNC__
 
 static void* scaf_gomp_experiment_control(void *unused);
 static scaf_client_experiment_description scaf_experiment_desc;
@@ -160,11 +141,7 @@ static scaf_client_section *current_section = NULL;
 static scaf_client_section *sections = NULL;
 static int scaf_in_parallel_section = 0;
 
-#ifdef __KNC__
-#define LOWPASS_INITIAL (2.0)
-#else
 #define LOWPASS_INITIAL (0.5)
-#endif //__KNC__
 
 // Discrete IIR, single-pole lowpass filter.
 // Time constant rc is expected to be the same across calls. Inputs x and dt
@@ -333,28 +310,16 @@ static int scaf_connect(void *scafd)
     scaf_message->message = SCAF_NEW_CLIENT;
     scaf_message->pid = scaf_mypid;
     scaf_message->section = current_section_id;
-#if ZMQ_VERSION_MAJOR > 2
     zmq_sendmsg(scafd, &request, 0);
-#else
-    zmq_send(scafd, &request, 0);
-#endif
     zmq_msg_close(&request);
 
     // Stop and poll just to see if we timeout. If no reply, then assume there
     // is no scafd for the rest of execution.
-#if ZMQ_VERSION_MAJOR > 2
     int rc = zmq_poll(&pi, 1, SCAFD_TIMEOUT_SECONDS*1000);
-#else
-    int rc = zmq_poll(&pi, 1, SCAFD_TIMEOUT_SECONDS*1000000);
-#endif
     if(rc == 1) {
         zmq_msg_t reply;
         zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
         zmq_recvmsg(scafd, &reply, 0);
-#else
-        zmq_recv(scafd, &reply, 0);
-#endif
         scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
         assert(response.message == SCAF_DAEMON_FEEDBACK);
         zmq_msg_close(&reply);
@@ -494,20 +459,12 @@ void scaf_not_malleable(void)
     scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
     scaf_message->message = SCAF_NOT_MALLEABLE;
     scaf_message->pid = scaf_mypid;
-#if ZMQ_VERSION_MAJOR > 2
     zmq_sendmsg(scafd, &request, 0);
-#else
-    zmq_send(scafd, &request, 0);
-#endif
     zmq_msg_close(&request);
 
     zmq_msg_t reply;
     zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
     zmq_recvmsg(scafd, &reply, 0);
-#else
-    zmq_recv(scafd, &reply, 0);
-#endif
     scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
     assert(response.message == SCAF_DAEMON_FEEDBACK);
     zmq_msg_close(&reply);
@@ -526,20 +483,12 @@ void scaf_advise_experiment_start(void)
     scaf_message->message = SCAF_EXPT_START;
     scaf_message->pid = scaf_mypid;
     scaf_message->message_value.experiment_pid = scaf_experiment_desc.experiment_pid;
-#if ZMQ_VERSION_MAJOR > 2
     zmq_sendmsg(scafd, &request, 0);
-#else
-    zmq_send(scafd, &request, 0);
-#endif
     zmq_msg_close(&request);
 
     zmq_msg_t reply;
     zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
     zmq_recvmsg(scafd, &reply, 0);
-#else
-    zmq_recv(scafd, &reply, 0);
-#endif
     scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
     assert(response.message == SCAF_DAEMON_FEEDBACK);
     zmq_msg_close(&reply);
@@ -554,20 +503,12 @@ void scaf_advise_experiment_stop(void)
     scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
     scaf_message->message = SCAF_EXPT_STOP;
     scaf_message->pid = scaf_mypid;
-#if ZMQ_VERSION_MAJOR > 2
     zmq_sendmsg(scafd, &request, 0);
-#else
-    zmq_send(scafd, &request, 0);
-#endif
     zmq_msg_close(&request);
 
     zmq_msg_t reply;
     zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
     zmq_recvmsg(scafd, &reply, 0);
-#else
-    zmq_recv(scafd, &reply, 0);
-#endif
     scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
     assert(response.message == SCAF_DAEMON_FEEDBACK);
     zmq_msg_close(&reply);
@@ -587,11 +528,7 @@ void scaf_retire(void)
     scaf_client_message *scaf_message = (scaf_client_message*)(zmq_msg_data(&request));
     scaf_message->message = SCAF_FORMER_CLIENT;
     scaf_message->pid = scaf_mypid;
-#if ZMQ_VERSION_MAJOR > 2
     zmq_sendmsg(scafd, &request, 0);
-#else
-    zmq_send(scafd, &request, 0);
-#endif
     zmq_msg_close(&request);
     zmq_close (scafd);
     zmq_term (scafd_context);
@@ -689,29 +626,17 @@ int scaf_section_start(void* section)
 
         scaf_message->message_value.efficiency = scaf_latest_efficiency_smooth;
 
-#if ZMQ_VERSION_MAJOR > 2
         zmq_sendmsg(scafd, &request, 0);
-#else
-        zmq_send(scafd, &request, 0);
-#endif
         zmq_msg_close(&request);
 
         zmq_msg_t reply;
         zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
         zmq_recvmsg(scafd, &reply, 0);
-#else
-        zmq_recv(scafd, &reply, 0);
-#endif
         scaf_daemon_message response = *((scaf_daemon_message*)(zmq_msg_data(&reply)));
         assert(response.message == SCAF_DAEMON_FEEDBACK);
         zmq_msg_close(&reply);
         current_num_clients = response.num_clients;
         current_threads = response.threads;
-#ifdef __KNC__
-        scaf_last_core_offset = response.core_offset;
-        scaf_last_threads_per_core = response.threads_per_core;
-#endif //__KNC__
     }
 
     scaf_section_ipc = 0.0;
@@ -759,10 +684,6 @@ void scaf_section_end(void)
             if(!scaf_notified_not_malleable)
                 ipc *= min(1.0, (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration);
 
-#ifdef __sun
-            ipc /= (current_threads < 4 ? current_threads : 4);
-#endif
-
             scaf_section_ipc += ipc;
         }
 #else
@@ -774,25 +695,15 @@ void scaf_section_end(void)
 #endif
 
         if(scaf_notified_not_malleable)
-#ifdef __KNC__
-            scaf_section_ipc = scaf_section_ipc *
-                               (current_threads * scaf_last_threads_per_core);
-#else
             scaf_section_ipc = scaf_section_ipc * current_threads;
-#endif //__KNC__
 
         current_section->last_ipc  = scaf_section_ipc;
     }
 
     current_section->last_time = scaf_section_duration;
     scaf_section_efficiency = min(SCAF_MEASURED_EFF_LIMIT, scaf_section_ipc / current_section->experiment_serial_ipc);
-#ifdef __KNC__
-    debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads*scaf_last_threads_per_core);
-#else
     debug_print(CYAN "Section (%p): @(%d){%f}{sIPC: %f; pIPC: %f} -> {EFF: %f; SPU: %f}" RESET "\n", current_section->section_id, current_threads, scaf_section_duration, current_section->experiment_serial_ipc, scaf_section_ipc, scaf_section_efficiency, scaf_section_efficiency*current_threads);
-#endif //__KNC__
 
-#ifndef __KNC__
     // If our "parallel" section was actually run on only 1 thread, also store
     // the results as the result of an experiment. (Even if an experiment had
     // already been run.)
@@ -804,7 +715,6 @@ void scaf_section_end(void)
         current_section->experiment_ipc_speedup = 1;
         current_section->experiment_complete = 1;
     }
-#endif // !__KNC__
 
     scaf_in_parallel_section = 0;
     return;
@@ -863,7 +773,6 @@ static inline void scaf_experiment_start(void)
     }
 #endif
 
-#if !defined(__sun)
     // Initialize anything that will be needed in `scaf_experiment_end'. The
     // reason we do this ahead of time is because `scaf_experiment_end' will
     // potentially be reached as a signal handler, and we want to minimize the
@@ -871,7 +780,6 @@ static inline void scaf_experiment_start(void)
     // SunOS we defer all of this until the signal handler because it's too
     // difficult to get the tracing facilities to cope with the ZMQ threads.)
     scaf_experiment_end_prep();
-#endif //__sun
 
     struct sigaction new_sa;
     sigemptyset(&new_sa.sa_mask);
@@ -945,29 +853,12 @@ static inline void scaf_experiment_end(int sig)
     }
 #endif
 
-#if defined(__sun)
-    // On SunOS we actually do the prep all in the signal handler. This is
-    // because while the SunOS are very nice and sophisticated, I would have to
-    // rewrite the tracing code above to deal with the extra threads introduced
-    // by starting up zmq. By doing the prep here, after the tracing, we ensure
-    // that the tracing only involves 1 lwp.
-    scaf_experiment_end_prep();
-#endif //__sun
-
     // The zmq messages here should already have been initialized outside of the
     // signal handler, including buffers.
-#if ZMQ_VERSION_MAJOR > 2
     zmq_sendmsg(scafd, scaf_experiment_send_msg, 0);
-#else
-    zmq_send(scafd, scaf_experiment_send_msg, 0);
-#endif
     zmq_msg_close(scaf_experiment_send_msg);
 
-#if ZMQ_VERSION_MAJOR > 2
     zmq_recvmsg(scafd, scaf_experiment_recv_msg, 0);
-#else
-    zmq_recv(scafd, scaf_experiment_recv_msg, 0);
-#endif
     zmq_msg_close(scaf_experiment_recv_msg);
 
     zmq_close(scafd);
@@ -1068,21 +959,13 @@ void scaf_gomp_experiment_destroy(void)
     assert(0==zmq_bind(experiment_child, child_connect_string));
     zmq_msg_t reply;
     zmq_msg_init(&reply);
-#if ZMQ_VERSION_MAJOR > 2
     zmq_recvmsg(experiment_child, &reply, 0);
-#else
-    zmq_recv(experiment_child, &reply, 0);
-#endif
     float response = *((float*)(zmq_msg_data(&reply)));
     zmq_msg_close(&reply);
     //  Send reply back to client (even if the client doesn't care about an answer)
     zmq_msg_init_size (&reply, sizeof(int));
     *((int*)(zmq_msg_data(&reply))) = 0;
-#if ZMQ_VERSION_MAJOR > 2
     zmq_sendmsg (experiment_child, &reply, 0);
-#else
-    zmq_send (experiment_child, &reply, 0);
-#endif
     zmq_msg_close (&reply);
     zmq_close(experiment_child);
 
@@ -1138,18 +1021,13 @@ static void* scaf_gomp_experiment_control(void *unused)
         // Start up our timing stuff with SCAF.
         scaf_experiment_start();
 
-
-#if defined(__linux__)
         // Request that we be traced by the parent. The parent will be in charge of
         // allowing/disallowing system calls, as well as killing us. Unnecessary in
         // SunOS: we just issue a stop here and wait for the parent thread to run
         // us again with tracing enabled.
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
         kill(getpid(), SIGSTOP);
-#endif //__linux__
-#if defined(__sun)
-        __sol_proc_force_stop_nowait(getpid());
-#endif //__sun
+
         // Unblock signals.
         sigprocmask(SIG_UNBLOCK, &sigs_int_alrm, NULL);
         // Run the parallel section in serial. The parent will intercept all
@@ -1172,7 +1050,7 @@ static void* scaf_gomp_experiment_control(void *unused)
     }
 
     int status;
-#if defined(__linux__)
+
     if (waitpid(expPid, &status, 0) < 0) {
         perror("SCAF waitpid");
         abort();
@@ -1180,44 +1058,16 @@ static void* scaf_gomp_experiment_control(void *unused)
 
     assert(WIFSTOPPED(status));
     assert(WSTOPSIG(status) == SIGSTOP);
-#endif //__linux__
-
-#if defined(__sun)
-    __sol_proc_stop_wait(expPid);
-    __sol_proc_trace_sigs(expPid);
-    __sol_proc_trace_syscalls(expPid);
-#endif
 
     int foundRaW = 0;
     int foundW = 0;
     while(1) {
-#if defined(__linux__)
         if (ptrace(PTRACE_SYSCALL, expPid, NULL, NULL) < 0) {
             perror("SCAF ptrace(PTRACE_SYSCALL, ...)");
             ptrace(PTRACE_KILL, expPid, NULL, NULL);
             abort();
         }
-#endif //__linux__
-#if defined(__sun)
-        if(foundW)
-            __sol_proc_run_clearsyscalls(expPid);
-        else
-            __sol_proc_run(expPid);
 
-        __sol_proc_stop_wait(expPid);
-        int syscall = -1;
-        int signal = -1;
-        lwpstatus_t ls = __sol_get_proc_status(expPid)->pr_lwp;
-        if(ls.pr_why == PR_SIGNALLED) {
-            signal = ls.pr_what;
-        } else if(ls.pr_why == PR_SYSENTRY) {
-            syscall = ls.pr_what;
-        }
-        assert(signal >= 0 || syscall >= 0);
-        assert(!(signal >= 0 && syscall >= 0));
-#endif //__sun
-
-#if defined(__linux__)
         if (waitpid(expPid, &status, 0) < 0) {
             perror("SCAF waitpid");
             ptrace(PTRACE_KILL, expPid, NULL, NULL);
@@ -1230,49 +1080,26 @@ static void* scaf_gomp_experiment_control(void *unused)
             ptrace(PTRACE_KILL, expPid, NULL, NULL);
             break;
         }
-#endif //__linux__
 
-#if defined(__linux__)
         if(WSTOPSIG(status)==SIGALRM) {
-#endif //__linux__
-#if defined(__sun)
-            if(signal>=0 && signal==SIGALRM) {
-#endif //__sun
 
                 if(scaf_expt_min_useconds > 0){
                     // The experiment has run long enough. We will stop it, but first let the
                     // function run for another small period of time. This is just an easy
                     // way to ensure that our experiment measurements have a minimum allowed
                     // runtime.
-#if defined(__linux__)
                     ptrace(PTRACE_CONT, expPid, NULL, 0);
-#endif //__linux__
-#if defined(__sun)
-                    __sol_proc_run_clearsigs(expPid);
-#endif //__sun
                     usleep(scaf_expt_min_useconds);
-#if defined(__linux__)
+
                     kill(expPid, SIGALRM);
                     waitpid(expPid, &status, 0);
-#endif //__linux__
-#if defined(__sun)
-                    __sol_proc_setsig(expPid, SIGALRM);
-                    __sol_proc_stop_wait(expPid);
-#endif //__sun
                 }
+
                 // The experiment has run long enough.
-#if defined(__linux__)
                 ptrace(PTRACE_DETACH, expPid, NULL, SIGALRM);
-#endif //__linux__
-#if defined(__sun)
-                __sol_proc_notrace(expPid);
-                __sol_proc_setsig(expPid, SIGALRM);
-                __sol_proc_run(expPid);
-#endif //__sun
                 break;
             }
 
-#if defined(__linux__)
             int syscall = ptrace(PTRACE_PEEKUSER, expPid, ORIG_ACCUM, 0);
             int foundUnsafeOpen = 0;
 
@@ -1286,42 +1113,24 @@ static void* scaf_gomp_experiment_control(void *unused)
                 break;
             }
             assert(syscall >= 0);
-#endif //__linux__
 
             if(syscall == __NR_scaf_experiment_done) {
-#if defined(__linux__)
                 ptrace(PTRACE_DETACH, expPid, NULL, NULL);
-#endif //__linux__
-#if defined(__sun)
-                __sol_proc_notrace(expPid);
-                __sol_proc_run_clearsyscalls(expPid);
-#endif
                 break;
             }
 
-#if defined(__linux__)
             if(syscall == __NR_write) {
                 // Replace the fd with one pointing to /dev/null. We'll keep track of any
                 // following reads to prevent violating RaW hazards through the
                 // filesystem. (If necessary, we could do this more precisely by tracking
                 // RaWs per fd.)
                 ptrace(PTRACE_POKEUSER, expPid, ARGREG, scaf_nullfd);
-#endif //__linux__
-#if defined(__sun)
-                if(syscall == SYS_write) {
-#endif //__sun
                     foundW = 1;
                 }
 
-#if defined(__linux__)
                 if(syscall == __NR_read && foundW)
-#endif //__linux__
-#if defined(__sun)
-                    if(syscall == SYS_read && foundW)
-#endif //__sun
-                        foundRaW = 1;
+                    foundRaW = 1;
 
-#if defined(__linux__)
                 //Some opens/mmaps are safe, depending on the arguments.
 #if defined(__tilegx__)
                 if(syscall == __NR_openat) {
@@ -1349,9 +1158,7 @@ static void* scaf_gomp_experiment_control(void *unused)
                         foundUnsafeOpen = 1;
                     }
                 }
-#endif //__linux__
 
-#if defined(__linux__)
                 if((syscall != __NR_rt_sigprocmask && syscall != __NR_rt_sigaction &&
                         syscall != __NR_read && syscall != __NR_nanosleep &&
                         syscall != __NR_write && syscall != __NR_restart_syscall &&
@@ -1365,16 +1172,10 @@ static void* scaf_gomp_experiment_control(void *unused)
                         syscall != __NR_close && syscall != __NR_mmap &&
                         syscall != __NR_fstat && syscall != __NR_munmap
                    ) || foundRaW || foundUnsafeOpen) {
-#endif //__linux__
-#if defined(__sun)
-                    if(( syscall != SYS_read && syscall != SYS_write )
-                            || foundRaW) {
-#endif //__sun
                         // This is not one of the syscalls deemed ``safe''. (Its completion by
                         // the kernel may affect the correctness of the program.) We must stop
                         // the experiment fork now.
                         debug_print(RED "Parent: child (%d) has behaved badly (section %p, syscall %d). Stopping it. (parent=%d)" RESET "\n", expPid, current_section_id, syscall, getpid());
-#if defined(__linux__)
                         void *badCall = (void*)0xbadCa11;
                         if (ptrace(PTRACE_POKEUSER, expPid, ORIG_ACCUM, badCall) < 0) {
                             perror("SCAF ptrace(PTRACE_POKEUSER, ...)");
@@ -1385,12 +1186,6 @@ static void* scaf_gomp_experiment_control(void *unused)
                         // process will return from the bogus/noop syscall and go straight into
                         // the SIGINT signal handler.
                         ptrace(PTRACE_DETACH, expPid, NULL, SIGINT);
-#endif //__linux__
-#if defined(__sun)
-                        __sol_proc_setsig(expPid, SIGINT);
-                        __sol_proc_notrace(expPid);
-                        __sol_proc_run_clearsyscalls(expPid);
-#endif //__sun
                         break;
                     }
 

@@ -28,15 +28,9 @@
 
 #if defined(__linux__)
 #define __NR_scaf_experiment_done 1337
+#else
+#error "Sadly, only Linux is supported in this version of SCAF."
 #endif //__linux__
-
-#if defined(__sun)
-// This is SYS_ntp_gettime on Solaris 10. We're stealing it. Basically SCAF
-// doesn't support codes which do NTP stuff. (We can't use an unused number as
-// in Linux since Solaris will kill a program making an invalid indirect
-// syscall before even giving it back to the tracing process.
-#define __NR_scaf_experiment_done 248
-#endif //__sun
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9
 
@@ -86,16 +80,7 @@ typedef struct {
     enum scaf_message_purpose message;
     int threads;
     int num_clients;
-#ifdef __KNC__
-    int core_offset;
-    int threads_per_core;
-#endif //__KNC__
 } scaf_daemon_message;
-
-#ifdef __KNC__
-extern int scaf_last_core_offset;
-extern int scaf_last_threads_per_core;
-#endif //__KNC__
 
 extern volatile int scaf_experiment_starting;
 extern volatile int scaf_notified_not_malleable;

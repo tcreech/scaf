@@ -17,13 +17,22 @@ make dist
 Of course, you can also do the standard ./configure && make install.
 
 TESTED PLATFORMS:
-- x86_64 on Linux, including 2x Opteron 6212s (16 threads), 2x Nahalem Xeons (8 threads), Xeon Phi 5110P, and SGI UV 2000 (512-1024 cores)
+- x86_64 on Linux, including 2x Opteron 6212s (16 threads), 2x Nahalem Xeons (8 threads), Xeon Phi 5110P*, and SGI UV 2000 (512-1024 cores)
 - TileGx on Linux (36 cores)
-- Sparc T2 on Solaris 10 and 11 (64 threads)
+- Sparc T2 on Solaris 10 and 11 (64 threads)*
 
 LIBGOMP INSTRUCTIONS:
 
 Patch GCC sources (patch is for 4.4, seems to work fine on at least 4.6 too).
 Rebuild with configure and 'make all-target-libgomp'.
 I haven't figured this out 100% yet, but you might have to grok the Make output and manually rerun the linker to get a libgomp.so which depends on your libscaf.so, which should in turn depend on libzmq.so. If it turns out these layers of dependences aren't supported then I'll have to figure something else out. (Like linking in libscaf and libzmq statically into libgomp?)
+
+* CLEANUP NOTES:
+
+In 2015, the SCAF codebase was cleaned up to make it more tolerable for public consumption. (The simplifications shrank the codebase by about 30%.) This included the following changes:
+- removed SunOS support, due to lack of PAPI SunOS support
+- removed support for KNC/Xeon Phi and ICC OpenMP runtime
+- removed support for ZeroMQ 2.x and older
+
+If anyone would like to see any of these features reintroduced, they should probably be rewritten more properly. However, feel free to contact the author or roll back in version control to see how they were originally implemented.
 

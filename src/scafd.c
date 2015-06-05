@@ -46,16 +46,8 @@ typedef struct {
     hwloc_cpuset_t affinity;
     hwloc_cpuset_t experiment_affinity;
 #endif // HAVE_LIBHWLOC
-#ifdef __KNC__
-    int core_offset;
-    int threads_per_core;
-#endif //__KNC__
     UT_hash_handle hh;
 } scaf_client;
-
-#ifdef __KNC__
-#define SCAFD_KNC_THREADS_PER_CORE (4)
-#endif //__KNC__
 
 static int num_online_processors(void)
 {
@@ -68,17 +60,9 @@ static int num_online_processors(void)
 
 static int chunksize = -1;
 
-#if defined(__sun)
-#include "solaris_trace_utils.h"
-#endif //__sun
-
 #define MAX_CLIENTS 8
 
-#ifdef __KNC__
-#define REFEREE_PERIOD_US (1000000 * 8)
-#else
 #define REFEREE_PERIOD_US (250000)
-#endif //__KNC__
 
 #define DEFAULT_UNRESPONSIVE_THRESHOLD (10.0)
 
@@ -113,7 +97,6 @@ static double startuptime;
 
 static int inline get_nlwp(pid_t pid)
 {
-#ifdef __linux__
     int nlwp;
     FILE *fp;
     char statfile[128];
@@ -125,15 +108,6 @@ static int inline get_nlwp(pid_t pid)
     assert(1==fscanf(fp,"%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %*u %*u %*d %*d %*d %*d %d 0 %*u %*u %*d %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*d %*d %*u %*u %*u %*u %*d\n",&nlwp));
     fclose(fp);
     return nlwp-2;
-#elif defined(__sun)
-    pstatus_t *ps = __sol_get_proc_status(pid);
-    if(ps == NULL)
-        return 0;
-    int nlwp = ps->pr_nlwp;
-    return nlwp-2;
-#else
-    return 0;
-#endif
 }
 
 static void inline apply_affinity_partitioning(void)
@@ -184,16 +158,6 @@ static void inline apply_affinity_partitioning(void)
     }
 
     hwloc_obj_t o = NULL;
-#ifdef __KNC__
-    {
-        // Intel's OpenMP runtime considers the first physical core to be what hwloc
-        // considers to be the second physical core. Therefore, we skip hwloc's
-        // first physical core. (4 PUs.)
-        int z;
-        for(z=0; z<4; z++)
-            o = hwloc_get_next_obj_by_type(topology, part_at, o);
-    }
-#endif
     HASH_ITER(hh, clients, current, tmp) {
         hwloc_bitmap_zero(client_total_set);
         hwloc_bitmap_zero(client_work_set);
@@ -201,11 +165,7 @@ static void inline apply_affinity_partitioning(void)
 
         int weight;
         int current_threads;
-#ifdef __KNC__
-        current_threads = current->threads * current->threads_per_core;
-#else
         current_threads = current->threads;
-#endif //__KNC__
         for(weight=0; weight < current_threads; weight++) {
             o = hwloc_get_next_obj_by_type(topology, part_at, o);
             hwloc_bitmap_or(client_total_set, client_total_set, o->cpuset);
@@ -285,11 +245,10 @@ int pid_is_scaf_controlled(int pid, int* pid_list, int list_size)
 // Go through a /proc/ filesystem and get jiffy usage for all processes not
 // under scafd's control. This takes 1 second to run due to a 1 second sleep.
 // Might possibly work on FreeBSD as is if we use /compat/linux/proc/ instead
-// of /proc/. Can certainly be implemented for SunOS, but this is TODO. (SunOS
-// version of this acts as if everything is idle always.)
+// of /proc/. Can certainly be implemented for SunOS, but with mostly different
+// code.
 float proc_get_cpus_used(void)
 {
-#if defined(__linux__)
     // Return immediately if the user disabled load monitoring
     if(nobgload) {
         sleep(1);
@@ -359,9 +318,6 @@ float proc_get_cpus_used(void)
                     }
                 } else {
                     // TODO: This happens a lot on the MIC. Why?
-#ifndef __KNC__
-                    printf("WARNING: failed to parse /proc/%d/stat !\n", procdir_pid);
-#endif
                 }
             }
         }
@@ -391,12 +347,6 @@ float proc_get_cpus_used(void)
 
     free(pid_list);
     return utilization;
-#endif //__linux__
-
-#if defined(__sun)
-    sleep(1);
-    return 0.0;
-#endif //__sun
 }
 
 scaf_client *find_client(int client_pid)
@@ -408,7 +358,6 @@ scaf_client *find_client(int client_pid)
 
 void get_name_from_pid(int pid, char *buf)
 {
-#if defined(__linux__)
     char commpath[64];
     sprintf(commpath, "/proc/%d/comm", pid);
     FILE *comm_f = fopen(commpath, "r");
@@ -419,12 +368,6 @@ void get_name_from_pid(int pid, char *buf)
         char name[5] = "[??]\0";
         strncpy(buf, name, 5);
     }
-#endif //__linux__
-#if defined(__sun)
-    psinfo_t pi = *__sol_get_proc_info(pid);
-    size_t namelen = strnlen(pi.pr_fname, min(PRFNSZ, SCAF_MAX_CLIENT_NAME_LEN));
-    strncpy(buf, pi.pr_fname, namelen);
-#endif //__sun
 }
 
 void add_client(int client_pid, int threads, void* client_section)
@@ -444,10 +387,6 @@ void add_client(int client_pid, int threads, void* client_section)
     c->affinity = hwloc_bitmap_alloc_full();
     c->experiment_affinity = hwloc_bitmap_alloc_full();
 #endif //HAVE_LIBHWLOC
-#ifdef __KNC__
-    c->core_offset = 0;
-    c->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
-#endif //__KNC__
 
     get_name_from_pid(client_pid, c->name);
     HASH_ADD_INT(clients, pid, c);
@@ -509,10 +448,6 @@ int perform_client_request(scaf_client_message *client_message, scaf_daemon_mess
         UNLOCK_CLIENTS;
         daemon_message->num_clients = num_clients;
         daemon_message->threads = client_threads;
-#ifdef __KNC__
-        daemon_message->core_offset = client->core_offset;
-        daemon_message->threads_per_core = client->threads_per_core;
-#endif //__KNC__
         return client_threads;
     } else if(client_request == SCAF_NOT_MALLEABLE) {
         RW_LOCK_CLIENTS;
@@ -615,13 +550,6 @@ void maxspeedup_referee_body(void* data)
         i=0;
         HASH_ITER(hh, clients, current, tmp) {
             current->threads = intpart[i];
-#ifdef __KNC__
-            if(current->malleable)
-                current->core_offset = i==0 ? 0 : intpart[i-1];
-            else
-                current->core_offset = 0;
-            current->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
-#endif //__KNC__
             i++;
         }
 
@@ -663,13 +591,6 @@ void equi_referee_body(void* data)
         i=0;
         HASH_ITER(hh, clients, current, tmp) {
             current->threads = intpart[i];
-#ifdef __KNC__
-            if(current->malleable)
-                current->core_offset = i==0 ? 0 : intpart[i-1];
-            else
-                current->core_offset = 0;
-            current->threads_per_core = SCAFD_KNC_THREADS_PER_CORE;
-#endif //__KNC__
             i++;
         }
 
