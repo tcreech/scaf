@@ -1,7 +1,7 @@
 //
 //  SCAF Client library implementation
 //
-//  Tim Creech <tcreech@umd.edu> - University of Maryland, 2012
+//  Tim Creech <tcreech@umd.edu> - University of Maryland, 2015
 //
 #include "../config.h"
 #include <sys/time.h>

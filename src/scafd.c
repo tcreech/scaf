@@ -1,6 +1,6 @@
 //
 //  SCAFd server.
-//  Tim Creech <tcreech@umd.edu>, University of Maryland, 2012
+//  Tim Creech <tcreech@umd.edu>, University of Maryland, 2015
 //
 #include "../config.h"
 #include <stdio.h>
