@@ -760,7 +760,7 @@ int main(int argc, char **argv)
                    "\t-e\tonly do strict equipartitioning\n"
                    "\t-t n\tuse a plain text status interface, printing every n seconds\n"
                    "\t-u n\tconsider a client unresponsive after n seconds. (default: %d)\n"
-                   "\t-C n\tonly allocate threads in multiples of n. (default: machine-specific)\n"
+                   "\t-C n\tonly allocate threads in multiples of n. (default: 1)\n"
                    "\t-T n\tuse n threads for all processes. (default: %d)\n"
                    "\t-x\tdo equipartitioning during experiments. (default: disabled)\n",
                    argv[0],
