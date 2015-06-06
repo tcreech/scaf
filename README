@@ -23,7 +23,8 @@ TESTED PLATFORMS:
 
 LIBGOMP INSTRUCTIONS:
 
-Patch GCC sources (patch is for 4.4, seems to work fine on at least 4.6 too).
+Patch GCC sources (patch is for 4.4, seems to work fine on at least 4.6 too). libgomp in GCC 4.9 has been significantly reworked, and the patch may require some massaging to get it to apply. An untested patch for 4.9.2 is included in ./patches .
+
 Rebuild with configure and 'make all-target-libgomp'.
 I haven't figured this out 100% yet, but you might have to grok the Make output and manually rerun the linker to get a libgomp.so which depends on your libscaf.so, which should in turn depend on libzmq.so. If it turns out these layers of dependences aren't supported then I'll have to figure something else out. (Like linking in libscaf and libzmq statically into libgomp?)
 
