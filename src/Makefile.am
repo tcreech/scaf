@@ -13,4 +13,7 @@ libscafwrap_la_SOURCES = libscafwrap.c
 libscafwrap_la_CFLAGS = -O2 -fPIC -D_GNU_SOURCE
 libscafwrap_la_LDFLAGS = -version-info 0:0:0 --as-needed -ldl -lscaf
 
+bin_SCRIPTS = scafwrap
+CLEANFILES = $(bin_SCRIPTS)
+
 include_HEADERS = scaf.h uthash.h
