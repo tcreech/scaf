@@ -11,7 +11,8 @@ libscaf_la_LDFLAGS = -version-info 0:0:0
 
 libscafwrap_la_SOURCES = libscafwrap.c
 libscafwrap_la_CFLAGS = -O2 -fPIC -D_GNU_SOURCE
-libscafwrap_la_LDFLAGS = -version-info 0:0:0 --as-needed -ldl -lscaf
+libscafwrap_la_LDFLAGS = -ldl -Wl,-rpath -Wl,$(libdir)
+libscafwrap_la_LIBADD = libscaf.la
 
 bin_SCRIPTS = scafwrap
 CLEANFILES = $(bin_SCRIPTS)
