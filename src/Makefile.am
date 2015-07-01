@@ -1,6 +1,6 @@
 bin_PROGRAMS = scafd
 scafd_SOURCES = scafd.c scaf.h uthash.h intpart.c intpart.h
-scafd_LDADD = -lm -lpthread -lcurses
+scafd_LDADD = -lm -lpthread
 scafd_CFLAGS = -O2
 
 AUTOMAKE_OPTIONS = gnu
