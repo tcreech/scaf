@@ -16,7 +16,13 @@
 #include <stdio.h>
 #include <signal.h>
 #include <unistd.h>
+
+#if defined(__linux__)
 #include <sys/reg.h>
+#elif defined(__FreeBSD__)
+#include <machine/vmm.h>
+#endif
+
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <assert.h>
@@ -47,9 +53,12 @@
 #else
 #error unsupported architecture
 #endif
-
+#elif defined(__FreeBSD__)
+#include <sys/types.h>
+#include <sys/ptrace.h>
+#include <machine/reg.h>
 #else  //__linux__
-#error "Sadly, only Linux is supported in this version of SCAF."
+#error "Sadly, only Linux and FreeBSD are supported in this version of SCAF."
 #endif //__linux__
 
 #define SCAFD_TIMEOUT_SECONDS 1
@@ -996,10 +1005,25 @@ void scaf_gomp_training_destroy(void)
     scaf_gomp_experiment_destroy();
 }
 
+// Report an unrecoverable error, kill the traced process and self.
+static inline void scaf_abort_trace(const char *string, pid_t pid)
+{
+    perror(string);
+#if defined(__linux__)
+    ptrace(PTRACE_KILL, pid, NULL, NULL);
+#elif defined(__FreeBSD__)
+    ptrace(PT_KILL, pid, NULL, 0);
+#endif
+    abort();
+}
+
 static void* scaf_gomp_experiment_control(void *unused)
 {
     void (*fn) (void*) = scaf_experiment_desc.fn;
     void *data = scaf_experiment_desc.data;
+#if defined(__FreeBSD__)
+    long lwp_id;
+#endif //__FreeBSD__
 
     // Flush all file descriptors before forking. We can't have two copies of
     // buffered output going to file descriptors due to the fork.
@@ -1027,11 +1051,20 @@ static void* scaf_gomp_experiment_control(void *unused)
         // Start up our timing stuff with SCAF.
         scaf_experiment_start();
 
+#if defined(__FreeBSD__)
+        thr_self(&lwp_id);
+        signal(SIGSYS, SIG_IGN);
+#endif //__FreeBSD__
+
         // Request that we be traced by the parent. The parent will be in charge of
         // allowing/disallowing system calls, as well as killing us. Unnecessary in
         // SunOS: we just issue a stop here and wait for the parent thread to run
         // us again with tracing enabled.
+#if defined(__linux__)
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+#elif defined(__FreeBSD__)
+        ptrace(PT_TRACE_ME, 0, NULL, 0);
+#endif
         kill(getpid(), SIGSTOP);
 
         // Unblock signals.
@@ -1056,6 +1089,9 @@ static void* scaf_gomp_experiment_control(void *unused)
     }
 
     int status;
+#if defined(__FreeBSD__)
+    long exp_lwp_id = 0;
+#endif //__FreeBSD__
 
     if (waitpid(expPid, &status, 0) < 0) {
         perror("SCAF waitpid");
@@ -1068,22 +1104,61 @@ static void* scaf_gomp_experiment_control(void *unused)
     int foundRaW = 0;
     int foundW = 0;
     while(1) {
-        if (ptrace(PTRACE_SYSCALL, expPid, NULL, NULL) < 0) {
-            perror("SCAF ptrace(PTRACE_SYSCALL, ...)");
-            ptrace(PTRACE_KILL, expPid, NULL, NULL);
+
+#if defined(__linux__)
+        if (ptrace(PTRACE_SYSCALL, expPid, NULL, NULL) < 0)
+#elif defined(__FreeBSD__)
+        if (ptrace(PT_TO_SCE, expPid, (caddr_t)1, 0) < 0)
+#endif
+            scaf_abort_trace("SCAF ptrace(PTRACE_SYSCALL, ...)", expPid);
+
+        if (waitpid(expPid, &status, 0) < 0) {
+            scaf_abort_trace("SCAF waitpid", expPid);
+        }
+
+#if defined(__FreeBSD__)
+        /* If we don't know the experiment LWP, grab it right out of memory. */
+        if(!exp_lwp_id) {
+            struct ptrace_io_desc iod;
+            iod.piod_op   = PIOD_READ_D;
+            iod.piod_offs = &lwp_id;
+            iod.piod_addr = &exp_lwp_id;
+            iod.piod_len  = sizeof(exp_lwp_id);
+            int rv = ptrace(PT_IO, expPid, (caddr_t)&iod, 0);
+            if(rv) {
+                perror("SCAF PIOD_READ_D");
+                ptrace(PT_KILL, expPid, NULL, 0);
+                abort();
+            }
+        }
+
+        struct ptrace_lwpinfo lwpi;
+        if(ptrace(PT_LWPINFO, expPid, (caddr_t)&lwpi, sizeof(lwpi))){
+            perror("SCAF ptrace(PT_LWPINFO, ...)");
+            ptrace(PT_KILL, expPid, NULL, 0);
             abort();
         }
 
-        if (waitpid(expPid, &status, 0) < 0) {
-            perror("SCAF waitpid");
-            ptrace(PTRACE_KILL, expPid, NULL, NULL);
-            abort();
+        if(lwpi.pl_lwpid != exp_lwp_id) {
+            /* This is the wrong LWP. Just let it keep going. */
+            if(ptrace(PT_RESUME, lwpi.pl_lwpid, (caddr_t)1, 0)) {
+                perror("ptrace(PT_RESUME, ...)");
+                ptrace(PT_KILL, expPid, NULL, 0);
+                abort();
+            }
+            continue;
         }
+#endif //__FreeBSD__
+
         int signal = WIFSTOPPED(status)? WSTOPSIG(status) : -1;
 
         if(!WIFSTOPPED(status) ||
                 !WSTOPSIG(status)==SIGTRAP) {
+#if defined(__linux__)
             ptrace(PTRACE_KILL, expPid, NULL, NULL);
+#elif defined(__FreeBSD__)
+            ptrace(PT_KILL, expPid, NULL, 0);
+#endif
             break;
         }
 
@@ -1094,7 +1169,11 @@ static void* scaf_gomp_experiment_control(void *unused)
                     // function run for another small period of time. This is just an easy
                     // way to ensure that our experiment measurements have a minimum allowed
                     // runtime.
+#if defined(__linux__)
                     ptrace(PTRACE_CONT, expPid, NULL, 0);
+#elif defined(__FreeBSD__)
+                    ptrace(PT_CONTINUE, expPid, NULL, 0);
+#endif
                     usleep(scaf_expt_min_useconds);
 
                     kill(expPid, SIGALRM);
@@ -1102,11 +1181,21 @@ static void* scaf_gomp_experiment_control(void *unused)
                 }
 
                 // The experiment has run long enough.
+#if defined(__linux__)
                 ptrace(PTRACE_DETACH, expPid, NULL, SIGALRM);
+#elif defined(__FreeBSD__)
+                ptrace(PT_DETACH, expPid, NULL, SIGALRM);
+#endif
                 break;
             }
 
+#if defined(__linux__)
             int syscall = ptrace(PTRACE_PEEKUSER, expPid, ORIG_ACCUM, 0);
+#elif defined(__FreeBSD__)
+            struct reg regs;
+            int rv = ptrace(PT_GETREGS, expPid, (caddr_t)&regs, 0);
+            int syscall = rv < 0 ? rv : regs.r_rax;
+#endif
             int foundUnsafeOpen = 0;
 
             if(syscall < 0 && signal == SIGSEGV) {
@@ -1115,16 +1204,25 @@ static void* scaf_gomp_experiment_control(void *unused)
                 // Deliver a SIGINT, continue the experiment, and detach. The experiment
                 // process will return from the bogus/noop syscall and go straight into
                 // the SIGINT signal handler.
+#if defined(__linux__)
                 ptrace(PTRACE_DETACH, expPid, NULL, SIGINT);
+#elif defined(__FreeBSD__)
+                ptrace(PT_DETACH, expPid, NULL, SIGINT);
+#endif
                 break;
             }
             assert(syscall >= 0);
 
             if(syscall == __NR_scaf_experiment_done) {
+#if defined(__linux__)
                 ptrace(PTRACE_DETACH, expPid, NULL, NULL);
+#elif defined(__FreeBSD__)
+                ptrace(PT_DETACH, expPid, NULL, 0);
+#endif
                 break;
             }
 
+#if defined(__linux__)
             if(syscall == __NR_write) {
                 // Replace the fd with one pointing to /dev/null. We'll keep track of any
                 // following reads to prevent violating RaW hazards through the
@@ -1132,68 +1230,120 @@ static void* scaf_gomp_experiment_control(void *unused)
                 // RaWs per fd.)
                 ptrace(PTRACE_POKEUSER, expPid, ARGREG, scaf_nullfd);
                     foundW = 1;
-                }
+            }
+            if(syscall == __NR_read && foundW)
+                foundRaW = 1;
+            }
+#elif defined(__FreeBSD__)
+            if(syscall == SYS_write || syscall == SYS_read) {
+                // Too lazy to implement the one free write on FreeBSD. Just
+                // report a hazard immediately.
+                foundRaW = 1;
+            }
+#endif
 
-                if(syscall == __NR_read && foundW)
-                    foundRaW = 1;
-
-                //Some opens/mmaps are safe, depending on the arguments.
+            // Some opens/mmaps are safe, depending on the arguments.
+#if defined(__linux__)
 #if defined(__tilegx__)
-                if(syscall == __NR_openat) {
+            if(syscall == __NR_openat) {
 #else
-                if(syscall == __NR_open) {
+            if(syscall == __NR_open) {
 #endif //__tilegx__
-                    char *file = (char*)ptrace(PTRACE_PEEKUSER, expPid, ARGREG, 0);
-                    if(strcmp("/sys/devices/system/cpu/online", file)==0) {
-                        //This is ok because it's always a read-only file.
-                    } else if(strcmp("/proc/stat", file)==0) {
-                        //This is ok because it's always a read-only file.
-                    } else if(strcmp("/proc/meminfo", file)==0) {
-                        //This is ok because it's always a read-only file.
-                    } else {
-                        debug_print(RED "Unsafe open: %s" RESET "\n", file);
-                        foundUnsafeOpen = 1;
-                    }
-                } else if(syscall == __NR_mmap) {
-                    int prot = (int)ptrace(PTRACE_PEEKUSER, expPid, ARG3REG, 0);
-                    if(prot & MAP_PRIVATE) {
-                        //This is ok because changes won't go back to disk.
-                    } else if(prot & MAP_ANONYMOUS) {
-                        //This is ok because there is no associated file.
-                    } else {
-                        foundUnsafeOpen = 1;
-                    }
+                char *file = (char*)ptrace(PTRACE_PEEKUSER, expPid, ARGREG, 0);
+                if(strcmp("/sys/devices/system/cpu/online", file)==0) {
+                    //This is ok because it's always a read-only file.
+                } else if(strcmp("/proc/stat", file)==0) {
+                    //This is ok because it's always a read-only file.
+                } else if(strcmp("/proc/meminfo", file)==0) {
+                    //This is ok because it's always a read-only file.
+                } else {
+                    debug_print(RED "Unsafe open: %s" RESET "\n", file);
+                    foundUnsafeOpen = 1;
                 }
+            } else if(syscall == __NR_mmap) {
+                int prot = (int)ptrace(PTRACE_PEEKUSER, expPid, ARG3REG, 0);
+                if(prot & MAP_PRIVATE) {
+                    //This is ok because changes won't go back to disk.
+                } else if(prot & MAP_ANONYMOUS) {
+                    //This is ok because there is no associated file.
+                } else {
+                    foundUnsafeOpen = 1;
+                }
+            }
+#elif defined(__FreeBSD__)
+            if(syscall == SYS_openat || syscall == SYS_open) {
+                foundUnsafeOpen = 1;
+            } else if(syscall == SYS_mmap) {
+                foundUnsafeOpen = 1;
+            }
+#endif
 
-                if((syscall != __NR_rt_sigprocmask && syscall != __NR_rt_sigaction &&
-                        syscall != __NR_read && syscall != __NR_nanosleep &&
-                        syscall != __NR_write && syscall != __NR_restart_syscall &&
-                        syscall != __NR_mprotect && syscall != __NR_sched_getaffinity &&
-                        syscall != __NR_sched_setaffinity &&
+#if defined(__linux__)
+            if((syscall != __NR_rt_sigprocmask && syscall != __NR_rt_sigaction &&
+                    syscall != __NR_read && syscall != __NR_nanosleep &&
+                    syscall != __NR_write && syscall != __NR_restart_syscall &&
+                    syscall != __NR_mprotect && syscall != __NR_sched_getaffinity &&
+                    syscall != __NR_sched_setaffinity &&
 #if defined(__tilegx__)
-                        syscall != __NR_openat &&
+                    syscall != __NR_openat &&
 #else
-                        syscall != __NR_open &&
+                    syscall != __NR_open &&
 #endif //__tilegx__
-                        syscall != __NR_close && syscall != __NR_mmap &&
-                        syscall != __NR_fstat && syscall != __NR_munmap
-                   ) || foundRaW || foundUnsafeOpen) {
+                    syscall != __NR_close && syscall != __NR_mmap &&
+                    syscall != __NR_fstat && syscall != __NR_munmap
+               ) || foundRaW || foundUnsafeOpen) {
+#elif defined(__FreeBSD__)
+            if((syscall != SYS_sigprocmask && syscall != SYS_sigaction &&
+                        syscall != SYS_read && syscall != SYS_nanosleep &&
+                        syscall != SYS_write &&
+                        syscall != SYS_mprotect && syscall != SYS_cpuset_getaffinity &&
+                        syscall != SYS_cpuset_setaffinity &&
+                        syscall != SYS_openat && syscall != SYS_open &&
+                        syscall != SYS_close && syscall != SYS_mmap &&
+                        syscall != SYS_fstat && syscall != SYS_munmap &&
+                        syscall != SYS_syscall /* TODO: No idea what this is just yet! */
+               ) || foundRaW || foundUnsafeOpen) {
+#endif //__linux__
                         // This is not one of the syscalls deemed ``safe''. (Its completion by
                         // the kernel may affect the correctness of the program.) We must stop
                         // the experiment fork now.
                         debug_print(RED "Parent: child (%d) has behaved badly (section %p, syscall %d). Stopping it. (parent=%d)" RESET "\n", expPid, current_section_id, syscall, getpid());
+
+#if defined(__linux__)
                         void *badCall = (void*)0xbadCa11;
                         if (ptrace(PTRACE_POKEUSER, expPid, ORIG_ACCUM, badCall) < 0) {
-                            perror("SCAF ptrace(PTRACE_POKEUSER, ...)");
-                            ptrace(PTRACE_KILL, expPid, NULL, NULL);
-                            abort();
+                            scaf_abort_trace("SCAF ptrace(PTRACE_POKEUSER, ...)", expPid);
                         }
+#elif defined(__FreeBSD__)
+                        // Change the syscall to an illegal number. This will
+                        // result in SIGSYS, which we can ignore. This is the
+                        // easiest way I can find to skip a syscall on FreeBSD.
+                        regs.r_rax = SYS_MAXSYSCALL;
+                        if(ptrace(PT_SETREGS, expPid, (caddr_t)&regs, 0)) {
+                            scaf_abort_trace("SCAF ptrace(PT_SETREGS, ...)", expPid);
+                        }
+#endif
+
                         // Deliver a SIGINT, continue the experiment, and detach. The experiment
                         // process will return from the bogus/noop syscall and go straight into
                         // the SIGINT signal handler.
+#if defined(__linux__)
                         ptrace(PTRACE_DETACH, expPid, NULL, SIGINT);
+#elif defined(__FreeBSD__)
+                        ptrace(PT_DETACH, expPid, (caddr_t)1, SIGINT);
+#endif
                         break;
                     }
+
+#if defined(__FreeBSD__)
+                    // FreeBSD needs us to explicitly send the thread on its
+                    // way again.
+                    if(ptrace(PT_RESUME, exp_lwp_id, (caddr_t)1, 0)) {
+                        perror("SCAF ptrace(PT_RESUME, ...)");
+                        ptrace(PT_KILL, expPid, 0, NULL);
+                        abort();
+                    }
+#endif //__FreeBSD__
 
                 } // while(1)
 

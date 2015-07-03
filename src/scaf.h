@@ -28,8 +28,6 @@
 
 #if defined(__linux__)
 #define __NR_scaf_experiment_done 1337
-#else
-#error "Sadly, only Linux is supported in this version of SCAF."
 #endif //__linux__
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9

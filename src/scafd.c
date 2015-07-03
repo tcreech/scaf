@@ -49,6 +49,12 @@ typedef struct {
     UT_hash_handle hh;
 } scaf_client;
 
+#if defined(__FreeBSD__)
+#include <sys/types.h>
+#include <libutil.h>
+#include <sys/user.h>
+#endif
+
 static int num_online_processors(void)
 {
     char *maxenv = getenv("OMP_NUM_THREADS");
@@ -98,6 +104,7 @@ static double startuptime;
 static int inline get_nlwp(pid_t pid)
 {
     int nlwp;
+#if defined(__linux__)
     FILE *fp;
     char statfile[128];
     sprintf(statfile, "/proc/%d/stat\0", pid);
@@ -108,6 +115,17 @@ static int inline get_nlwp(pid_t pid)
     assert(1==fscanf(fp,"%*64d %*64s %*c %*64d %*64d %*64d %*64d %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64d %*64d %64d 0 %*64u %*64u %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64u %*64u %*64u %*64u %*64d\n",&nlwp));
     fclose(fp);
     return nlwp-2;
+#elif defined(__FreeBSD__)
+    struct kinfo_proc *ki;
+    ki = kinfo_getproc(pid);
+    if(ki == NULL)
+        return 0;
+    nlwp = ki->ki_numthreads;
+    free(ki);
+    return nlwp-2;
+#else
+    return 0;
+#endif
 }
 
 static void inline apply_affinity_partitioning(void)
@@ -361,6 +379,13 @@ void get_name_from_pid(int pid, char *buf, size_t max)
     char commpath[64];
     sprintf(commpath, "/proc/%d/comm", pid);
     FILE *comm_f = fopen(commpath, "r");
+
+    /* Try cmdline if comm unavailable. */
+    if(comm_f == NULL) {
+        sprintf(commpath, "/proc/%d/cmdline", pid);
+        comm_f = fopen(commpath, "r");
+    }
+
     int s = 0;
     if(comm_f != NULL){
         char format[10];
