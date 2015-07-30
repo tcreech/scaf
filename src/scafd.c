@@ -105,7 +105,7 @@ static int inline get_nlwp(pid_t pid)
     if(!fp)
         return 0;
 
-    assert(1==fscanf(fp,"%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %*u %*u %*d %*d %*d %*d %d 0 %*u %*u %*d %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %*d %*d %*u %*u %*u %*u %*d\n",&nlwp));
+    assert(1==fscanf(fp,"%*64d %*64s %*64c %*64d %*64d %*64d %*64d %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64d %*64d %64d 0 %*64u %*64u %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64u %*64u %*64u %*64u %*64d\n",&nlwp));
     fclose(fp);
     return nlwp-2;
 }
@@ -267,7 +267,7 @@ float proc_get_cpus_used(void)
         FILE *fp;
         fp = fopen("/proc/stat","r");
         assert(fp && "Can't open $PROC/stat ?");
-        assert(7==fscanf(fp,"cpu %lu %lu %lu %lu %lu %lu %lu", &(g_user[z]), &(g_low[z]), &(g_sys[z]), &(g_idle[z]), &(g_iow[z]), &(g_hirq[z]), &(g_sirq[z])));
+        assert(7==fscanf(fp,"cpu %32lu %32lu %32lu %32lu %32lu %32lu %32lu", &(g_user[z]), &(g_low[z]), &(g_sys[z]), &(g_idle[z]), &(g_iow[z]), &(g_hirq[z]), &(g_sirq[z])));
         fclose(fp);
 
         used_utime[z] = 0;
@@ -356,18 +356,22 @@ scaf_client *find_client(int client_pid)
     return c;
 }
 
-void get_name_from_pid(int pid, char *buf)
+void get_name_from_pid(int pid, char *buf, size_t max)
 {
     char commpath[64];
     sprintf(commpath, "/proc/%d/comm", pid);
     FILE *comm_f = fopen(commpath, "r");
     int s = 0;
-    if(comm_f != NULL)
-        s = fscanf(comm_f, "%s\n", buf);
+    if(comm_f != NULL){
+        char format[10];
+        sprintf(format, "%%%ds\n", SCAF_MAX_CLIENT_NAME_LEN);
+        s = fscanf(comm_f, format, buf);
+    }
     if(s < 1) {
         char name[5] = "[??]\0";
         strncpy(buf, name, 5);
     }
+    fclose(comm_f);
 }
 
 void add_client(int client_pid, int threads, void* client_section)
@@ -388,7 +392,7 @@ void add_client(int client_pid, int threads, void* client_section)
     c->experiment_affinity = hwloc_bitmap_alloc_full();
 #endif //HAVE_LIBHWLOC
 
-    get_name_from_pid(client_pid, c->name);
+    get_name_from_pid(client_pid, c->name, SCAF_MAX_CLIENT_NAME_LEN);
     HASH_ADD_INT(clients, pid, c);
 }
 
@@ -519,8 +523,15 @@ void maxspeedup_referee_body(void* data)
         int i;
         double time_since_expt = now - startuptime;
 
-        intpart = realloc(intpart, sizeof(int)*num_clients);
-        floatpart = realloc(floatpart, sizeof(float)*num_clients);
+        {
+            void *newpart;
+            newpart = realloc(intpart, sizeof(int)*num_clients);
+            assert(num_clients==0 || newpart != NULL);
+            intpart = newpart;
+            newpart = realloc(floatpart, sizeof(float)*num_clients);
+            assert(num_clients==0 || newpart != NULL);
+            floatpart = newpart;
+        }
 
         HASH_ITER(hh, clients, current, tmp) {
             if(current->threads > 1)
@@ -577,7 +588,13 @@ void equi_referee_body(void* data)
 
         int available_threads = max_threads - ceil(bg_utilization - 0.5);
 
-        intpart = realloc(intpart, sizeof(int)*num_clients);
+        {
+            void *newpart;
+            newpart = realloc(intpart, sizeof(int)*num_clients);
+            assert(num_clients==0 || newpart != NULL);
+            intpart = newpart;
+        }
+
         if(eq_offset > 0 && num_clients == 2) {
             // Special case: if user specified number of threads for first client
             // of a two-client pair, then just force that configuration. This is a

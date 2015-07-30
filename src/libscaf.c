@@ -670,7 +670,7 @@ void scaf_section_end(void)
     } else {
 #if(HAVE_LIBPAPI)
         {
-            float rtime, ptime, ipc;
+            float ptime, ipc;
             long long int ins;
             int ret = PAPI_HL_MEASURE(&scaf_section_end_time, &ptime, &ins, &ipc);
             if(ret != PAPI_OK) always_print(RED "WARNING: Bad PAPI things happening. (%s)" RESET "\n", PAPI_strerror(ret));
@@ -680,7 +680,6 @@ void scaf_section_end(void)
             // was running. This may not account for all of the wall time. Estimate
             // the effective average rate over all threads by assuming that all
             // threads had similar rates while they were running, and 0 otherwise.
-            float oldipc = ipc;
             if(!scaf_notified_not_malleable)
                 ipc *= min(1.0, (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration);
 
@@ -839,7 +838,6 @@ static inline void scaf_experiment_end(int sig)
         // was running. This may not account for all of the wall time. Estimate
         // the effective average rate over all threads by assuming that all
         // threads had similar rates while they were running, and 0 otherwise.
-        float oldipc = ipc;
         if(!scaf_notified_not_malleable &&
                 scaf_section_end_process_time != scaf_section_start_process_time)
             ipc = ipc * (scaf_section_end_process_time-scaf_section_start_process_time) / scaf_section_duration;
