@@ -105,7 +105,7 @@ static int inline get_nlwp(pid_t pid)
     if(!fp)
         return 0;
 
-    assert(1==fscanf(fp,"%*64d %*64s %*64c %*64d %*64d %*64d %*64d %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64d %*64d %64d 0 %*64u %*64u %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64u %*64u %*64u %*64u %*64d\n",&nlwp));
+    assert(1==fscanf(fp,"%*64d %*64s %*c %*64d %*64d %*64d %*64d %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64d %*64d %64d 0 %*64u %*64u %*64d %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64u %*64d %*64d %*64u %*64u %*64u %*64u %*64d\n",&nlwp));
     fclose(fp);
     return nlwp-2;
 }
