@@ -5,7 +5,8 @@
 #define __STRINGIFY(X) #X
 #define STRINGIFY(X) __STRINGIFY(X)
 
-/* Describe the functions we are wrapping */
+/* Describe the functions we are wrapping.
+ * libgomp from GCC < 4.9 have GOMP_parallel_{start,stop}. */
 #define __scaf_SECTION_START GOMP_parallel_start
 #define __scaf_SECTION_START_RET void
 #define __scaf_SECTION_START_FORMAL_ARGS void (*fn) (void *), void *data, unsigned num_threads
@@ -17,11 +18,23 @@
 #define __scaf_SECTION_END_RET void
 #define __scaf_SECTION_END_FORMAL_ARGS void
 #define __scaf_SECTION_END_ACTUAL_ARGS void
+/* libgomp from GCC >= 4.9 have a single GOMP_parallel call that does both
+ * start/stop and runs the master thread's workload in between. */
+#define __scaf_SECTION_BOTH GOMP_parallel
+#define __scaf_SECTION_BOTH_RET void
+#define __scaf_SECTION_BOTH_FORMAL_ARGS void (*fn) (void *), void *data, unsigned num_threads, unsigned int flags
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS fn, data, num_threads, flags
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS_1_2 fn, data
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS_1 fn
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS_2 data
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS_3 num_threads
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS_4 flags
 
 /* Local pointers to the actual functions which we still want to eventually
  * call */
 static __scaf_SECTION_START_RET (*__real_start)(__scaf_SECTION_START_FORMAL_ARGS) = NULL;
 static __scaf_SECTION_END_RET (*__real_end)(__scaf_SECTION_END_FORMAL_ARGS) = NULL;
+static __scaf_SECTION_BOTH_RET (*__real_both)(__scaf_SECTION_BOTH_FORMAL_ARGS) = NULL;
 
 /* Wrapper around the beginning of a parallel section */
 __scaf_SECTION_START_RET
@@ -56,5 +69,27 @@ __scaf_SECTION_END( __scaf_SECTION_END_FORMAL_ARGS )
    __real_end();
    /* Terminate any experiment */
    scaf_gomp_training_destroy();
+}
+
+/* Wrapper around the the combined start/end function in GCC 4.9+. Fortunately,
+ * it calls the old GOMP_parallel_end right after the master thread finishes
+ * its work, so we can treat this much like GOMP_parallel_start.*/
+__scaf_SECTION_BOTH_RET
+__scaf_SECTION_BOTH( __scaf_SECTION_BOTH_FORMAL_ARGS )
+{
+   int scaf_num_threads;
+   /* Find the real function if not already saved */
+   if(!__real_both)
+      __real_both = dlsym(RTLD_NEXT, STRINGIFY(__scaf_SECTION_BOTH));
+
+   /* Query SCAF for the current number of threads to use */
+   scaf_num_threads = scaf_section_start(__scaf_SECTION_BOTH_ACTUAL_ARGS_1);
+   /* Ask SCAF to start an experiment if necessary */
+   scaf_gomp_experiment_create(__scaf_SECTION_BOTH_ACTUAL_ARGS_1_2);
+
+   /* Finally, call the real function with the altered number of requested
+    * threads */
+   __real_both(__scaf_SECTION_BOTH_ACTUAL_ARGS_1_2, scaf_num_threads,
+           __scaf_SECTION_BOTH_ACTUAL_ARGS_4);
 }
 
