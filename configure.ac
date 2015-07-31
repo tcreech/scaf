@@ -1,5 +1,5 @@
 AC_INIT([scaf], [m4_esyscmd([git describe --always --dirty --long 2> /dev/null | tr -d \\n])], [tcreech@umd.edu])
-AM_INIT_AUTOMAKE([foreign -Wall -Werror])
+AM_INIT_AUTOMAKE([foreign -Wall -Werror dist-bzip2 dist-xz])
 AC_CONFIG_HEADERS([config.h])
 AC_PROG_CC
 AM_PROG_CC_C_O
