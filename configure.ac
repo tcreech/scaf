@@ -5,7 +5,7 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 AC_PROG_LIBTOOL
 AC_CONFIG_FILES([Makefile src/Makefile src/scafwrap], [chmod +x src/scafwrap])
-#AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_MACRO_DIR([m4])
 
 AC_CHECK_LIB([zmq], [zmq_sendmsg], [], [AC_MSG_ERROR([zeromq (libzmq) 3.0.0 or newer not found. This is a required dependence. Please add the required CPPFLAGS and LDFLAGS to your configure line.])])
 
