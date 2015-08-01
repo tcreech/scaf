@@ -1231,7 +1231,7 @@ static void* scaf_gomp_experiment_control(void *unused)
                 ptrace(PTRACE_POKEUSER, expPid, ARGREG, scaf_nullfd);
                     foundW = 1;
             }
-            if(syscall == __NR_read && foundW)
+            if(syscall == __NR_read && foundW) {
                 foundRaW = 1;
             }
 #elif defined(__FreeBSD__)
