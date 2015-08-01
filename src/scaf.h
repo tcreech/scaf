@@ -51,6 +51,18 @@ enum scaf_message_purpose {
     SCAF_EXPT_STOP,
 };
 
+#define SCAF_GET_THREADS_WHITELIST_LEN (7*7)
+char *scaf_get_threads_whitelist[SCAF_GET_THREADS_WHITELIST_LEN] =
+{
+    "cg.S.x", "cg.W.x", "cg.A.x", "cg.B.x", "cg.C.x", "cg.D.x", "cg.E.x",
+    "bt.S.x", "bt.W.x", "bt.A.x", "bt.B.x", "bt.C.x", "bt.D.x", "bt.E.x",
+    "ft.S.x", "ft.W.x", "ft.A.x", "ft.B.x", "ft.C.x", "ft.D.x", "ft.E.x",
+    "lu.S.x", "lu.W.x", "lu.A.x", "lu.B.x", "lu.C.x", "lu.D.x", "lu.E.x",
+    "mg.S.x", "mg.W.x", "mg.A.x", "mg.B.x", "mg.C.x", "mg.D.x", "mg.E.x",
+    "sp.S.x", "sp.W.x", "sp.A.x", "sp.B.x", "sp.C.x", "sp.D.x", "sp.E.x",
+    "ua.S.x", "ua.W.x", "ua.A.x", "ua.B.x", "ua.C.x", "ua.D.x", "ua.E.x",
+};
+
 typedef struct {
     void* section_id;
     float last_time;

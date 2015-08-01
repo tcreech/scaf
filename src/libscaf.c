@@ -439,6 +439,14 @@ static void* scaf_init(void **context_p)
 
 void scaf_not_malleable(void)
 {
+    // Don't report this over and over again.
+    if(scaf_notified_not_malleable)
+        return;
+
+    // Only report once if in a parallel section.
+    if(!pthread_equal(scaf_master_thread, pthread_self()))
+        return;
+
     // This can be known before a parallel section starts. Initialize
     // communication with scafd if necessary.
     if(!did_scaf_startup) {
