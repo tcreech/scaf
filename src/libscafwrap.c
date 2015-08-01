@@ -34,7 +34,6 @@
  * call */
 static __scaf_SECTION_START_RET (*__real_start)(__scaf_SECTION_START_FORMAL_ARGS) = NULL;
 static __scaf_SECTION_END_RET (*__real_end)(__scaf_SECTION_END_FORMAL_ARGS) = NULL;
-static __scaf_SECTION_BOTH_RET (*__real_both)(__scaf_SECTION_BOTH_FORMAL_ARGS) = NULL;
 
 /* Wrapper around the beginning of a parallel section */
 __scaf_SECTION_START_RET
@@ -68,28 +67,30 @@ __scaf_SECTION_END( __scaf_SECTION_END_FORMAL_ARGS )
    /* Call the real GOMP function to terminate the section */
    __real_end();
    /* Terminate any experiment */
-   scaf_gomp_training_destroy();
+   scaf_gomp_experiment_destroy();
 }
 
-/* Wrapper around the the combined start/end function in GCC 4.9+. Fortunately,
- * it calls the old GOMP_parallel_end right after the master thread finishes
- * its work, so we can treat this much like GOMP_parallel_start.*/
+/* Wrapper around the the combined start/end function in GCC 4.9+. This is
+ * similar, except we must call the work function for this master thread within
+ * this function. The other change is that this function accepts a "flags"
+ * argument, which we effectively ignore since we just call the old functions
+ * that assume flags=0.
+ *
+ * Note that here we do not ever call the "real" function; we're replacing it
+ * entirely.*/
 __scaf_SECTION_BOTH_RET
 __scaf_SECTION_BOTH( __scaf_SECTION_BOTH_FORMAL_ARGS )
 {
-   int scaf_num_threads;
-   /* Find the real function if not already saved */
-   if(!__real_both)
-      __real_both = dlsym(RTLD_NEXT, STRINGIFY(__scaf_SECTION_BOTH));
+    if(__scaf_SECTION_BOTH_ACTUAL_ARGS_4 != 0)
+        always_print(YELLOW "WARNING: GOMP_parallel(...) called with flags!=0! Unsupported.\n" RESET);
 
-   /* Query SCAF for the current number of threads to use */
-   scaf_num_threads = scaf_section_start(__scaf_SECTION_BOTH_ACTUAL_ARGS_1);
-   /* Ask SCAF to start an experiment if necessary */
-   scaf_gomp_experiment_create(__scaf_SECTION_BOTH_ACTUAL_ARGS_1_2);
+    /* Call the overloaded start function */
+    __scaf_SECTION_START( __scaf_SECTION_START_ACTUAL_ARGS);
 
-   /* Finally, call the real function with the altered number of requested
-    * threads */
-   __real_both(__scaf_SECTION_BOTH_ACTUAL_ARGS_1_2, scaf_num_threads,
-           __scaf_SECTION_BOTH_ACTUAL_ARGS_4);
+    /* Run the work for this thread */
+    __scaf_SECTION_BOTH_ACTUAL_ARGS_1(__scaf_SECTION_BOTH_ACTUAL_ARGS_2);
+
+    /* Finally, call the overloaded end function */
+    __scaf_SECTION_END();
 }
 
