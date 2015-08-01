@@ -26,9 +26,7 @@
     __typeof__ (b) _b = (b); \
     _a < _b ? _a : _b; })
 
-#if defined(__linux__)
 #define __NR_scaf_experiment_done 1337
-#endif //__linux__
 
 #define SCAF_MAX_CLIENT_NAME_LEN 9
 
