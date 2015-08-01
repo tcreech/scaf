@@ -1126,25 +1126,19 @@ static void* scaf_gomp_experiment_control(void *unused)
             iod.piod_len  = sizeof(exp_lwp_id);
             int rv = ptrace(PT_IO, expPid, (caddr_t)&iod, 0);
             if(rv) {
-                perror("SCAF PIOD_READ_D");
-                ptrace(PT_KILL, expPid, NULL, 0);
-                abort();
+                scaf_abort_trace("SCAF PIOD_READ_D", expPid);
             }
         }
 
         struct ptrace_lwpinfo lwpi;
         if(ptrace(PT_LWPINFO, expPid, (caddr_t)&lwpi, sizeof(lwpi))){
-            perror("SCAF ptrace(PT_LWPINFO, ...)");
-            ptrace(PT_KILL, expPid, NULL, 0);
-            abort();
+            scaf_abort_trace("SCAF ptrace(PT_LWPINFO, ...)", expPid);
         }
 
         if(lwpi.pl_lwpid != exp_lwp_id) {
             /* This is the wrong LWP. Just let it keep going. */
             if(ptrace(PT_RESUME, lwpi.pl_lwpid, (caddr_t)1, 0)) {
-                perror("ptrace(PT_RESUME, ...)");
-                ptrace(PT_KILL, expPid, NULL, 0);
-                abort();
+                scaf_abort_trace("ptrace(PT_RESUME, ...)", expPid);
             }
             continue;
         }
@@ -1339,9 +1333,7 @@ static void* scaf_gomp_experiment_control(void *unused)
                     // FreeBSD needs us to explicitly send the thread on its
                     // way again.
                     if(ptrace(PT_RESUME, exp_lwp_id, (caddr_t)1, 0)) {
-                        perror("SCAF ptrace(PT_RESUME, ...)");
-                        ptrace(PT_KILL, expPid, 0, NULL);
-                        abort();
+                        scaf_abort_trace("SCAF ptrace(PT_RESUME, ...)", expPid);
                     }
 #endif //__FreeBSD__
 
