@@ -7,16 +7,14 @@
 /*
  * Convenience function: non-chunked version of intpart_from_floatpart_chunked.
  */
-int intpart_from_floatpart(int n, int* intpart, float* floatpart, int l)
-{
+int intpart_from_floatpart(int n, int *intpart, float *floatpart, int l) {
     return intpart_from_floatpart_chunked(n, intpart, floatpart, 1, l);
 }
 
 /*
  * Convenience function: non-chunked version of intpart_equipartition_chunked.
  */
-int intpart_equipartition(int n, int* intpart, int l)
-{
+int intpart_equipartition(int n, int *intpart, int l) {
     return intpart_equipartition_chunked(n, intpart, 1, l);
 }
 
@@ -24,12 +22,11 @@ int intpart_equipartition(int n, int* intpart, int l)
  * Generate a partitioning which attemps to make partitions as equal as
  * possible.
  */
-int intpart_equipartition_chunked(int n, int* intpart, int chunksize, int l)
-{
+int intpart_equipartition_chunked(int n, int *intpart, int chunksize, int l) {
     int i, ret;
     float *floatpart = malloc(sizeof(float) * l);
     float each = 1.0 / ((float)l);
-    for(i=0; i<l; i++)
+    for(i = 0; i < l; i++)
         floatpart[i] = each;
     ret = intpart_from_floatpart_chunked(n, intpart, floatpart, chunksize, l);
     free(floatpart);
@@ -55,8 +52,8 @@ int intpart_equipartition_chunked(int n, int* intpart, int chunksize, int l)
  * NOTE: intpart will NOT sum to n if chunksize does not divide n. (It
  * will specifically sum to /less/ than n.)
  */
-int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int chunksize, int l)
-{
+int intpart_from_floatpart_chunked(int n, int *intpart, float *floatpart,
+                                   int chunksize, int l) {
     int i, in, remaining_chunks;
     float *diffs;
 
@@ -75,10 +72,10 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
     diffs = malloc(sizeof(float) * l);
 
     // Do an initial round of assignment, rounding down.
-    for(i=0; i<l; i++) {
+    for(i = 0; i < l; i++) {
         intpart[i] = (floatpart[i] * in);
         remaining_chunks -= intpart[i];
-        diffs[i] = (floatpart[i]*in) - (float)(intpart[i]);
+        diffs[i] = (floatpart[i] * in) - (float)(intpart[i]);
     }
 
     // Distribute remaining chunks to the partitions with the greatest
@@ -90,12 +87,12 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
         // there are not too many chunks leftover, so this won't have to be done
         // too many times! If we find a partition that is empty, give it
         // something first.
-        for(i=0; i<l; i++) {
+        for(i = 0; i < l; i++) {
             if(diffs[i] > maxdiff) {
                 maxi = i;
                 maxdiff = diffs[i];
             }
-            if(intpart[i]==0) {
+            if(intpart[i] == 0) {
                 maxi = i;
                 maxdiff = diffs[i];
                 break;
@@ -105,14 +102,14 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
         // Distribute a remaining chunk here.
         remaining_chunks--;
         intpart[maxi] = intpart[maxi] + 1;
-        diffs[maxi] = (floatpart[maxi]*in) - (float)(intpart[maxi]);
+        diffs[maxi] = (floatpart[maxi] * in) - (float)(intpart[maxi]);
     }
 
     // It's still possible that there are empty partitions. If so, find them and
     // steal chunks for them from the partitions with the greatest diffs.
     int empty = -1;
-    for(i=0; i<l; i++) {
-        if(intpart[i]==0) {
+    for(i = 0; i < l; i++) {
+        if(intpart[i] == 0) {
             empty = i;
             break;
         }
@@ -123,7 +120,7 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
         // Find the partition with the greatest difference and multiple chunks.
         // There *has* to be one with multiple chunks if we have empty
         // partitions.
-        for(i=0; i<l; i++) {
+        for(i = 0; i < l; i++) {
             if(intpart[i] < 2)
                 continue;
             if(diffs[i] > maxdiff) {
@@ -137,13 +134,13 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
         intpart[maxi]--;
         intpart[empty]++;
         // Update diffs.
-        diffs[maxi] = (floatpart[maxi]*in) - (float)(intpart[maxi]);
-        diffs[empty] = (floatpart[empty]*in) - (float)(intpart[empty]);
+        diffs[maxi] = (floatpart[maxi] * in) - (float)(intpart[maxi]);
+        diffs[empty] = (floatpart[empty] * in) - (float)(intpart[empty]);
 
         // Check if there is still some empty partition.
         empty = -1;
-        for(i=0; i<l; i++) {
-            if(intpart[i]==0) {
+        for(i = 0; i < l; i++) {
+            if(intpart[i] == 0) {
                 empty = i;
                 break;
             }
@@ -151,20 +148,19 @@ int intpart_from_floatpart_chunked(int n, int *intpart, float* floatpart, int ch
     }
 
     // Expand the partition back up by the chunking factor.
-    for(i=0; i<l; i++) {
+    for(i = 0; i < l; i++) {
         intpart[i] *= chunksize;
     }
 
     // Sum intpart to ensure that it is not greater than n.
     int sum = 0;
-    for(i=0; i<l; i++)
+    for(i = 0; i < l; i++)
         sum += intpart[i];
     assert(sum <= n);
 
-
     // Find the min; ensure it is not zero.
     int minp = n;
-    for(i=0; i<l; i++)
+    for(i = 0; i < l; i++)
         minp = (intpart[i] < minp ? intpart[i] : minp);
     assert(minp > 0);
 
@@ -186,26 +182,26 @@ finish:
  * relative to the items in normweight will result in a partitioning
  * approaching equipartitioning.
  */
-int intpart_from_floatpart_chunked_normalized(int n, int *intpart, float* floatpart, int chunksize, float normweight, int l)
-{
+int intpart_from_floatpart_chunked_normalized(int n, int *intpart,
+                                              float *floatpart, int chunksize,
+                                              float normweight, int l) {
     float *normfloatpart = malloc(sizeof(float) * l);
     int i;
     float sum = 0;
-    for(i=0; i<l; i++) {
+    for(i = 0; i < l; i++) {
         normfloatpart[i] = floatpart[i] + normweight;
         sum += normfloatpart[i];
     }
-    for(i=0; i<l; i++) {
+    for(i = 0; i < l; i++) {
         normfloatpart[i] /= sum;
     }
 
     int ret;
-    ret = intpart_from_floatpart_chunked(n, intpart, normfloatpart, chunksize, l);
+    ret =
+        intpart_from_floatpart_chunked(n, intpart, normfloatpart, chunksize, l);
 
 finish:
     free(normfloatpart);
 
     return ret;
 }
-
-
