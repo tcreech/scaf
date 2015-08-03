@@ -39,5 +39,8 @@ Say we have a 64-core machine, but we want SCAF and all of its clients to use on
 
     $ scafd -C 4 -b -T 32 -t 60
 
+## AUTHOR
+Tim Creech <tcreech@umd.edu>
+
 ## SEE ALSO
 scafwrap(1)

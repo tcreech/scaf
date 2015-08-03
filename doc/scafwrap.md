@@ -26,12 +26,16 @@ The underlying SCAF runtime that `scafwrap` uses is affected by the following en
   By default, serial experiments do not run unless there are multiple SCAF clients. (A single client should probably just run on the entire machine, so performance feedback would not be useful.) If a second client arrives, then all clients will begin executing experiments. Setting `SCAF_LAZY_EXPERIMENTS=0` disables this behavior, and all clients will run serial experiments even if they are alone on the machine.
 
 * `SCAF_SECTION_DUMPS`:
+  Setting this to a non-zero integer enables verbose logging of every parallel section to `/tmp/scaf-sectiondump.${PID}.csv`. This can be used to examine the timing and nature of parallel sections in your program. If enabled, *all* sections will be accounted for in this file regardless of the values of `SCAF_COMM_RATE_LIMIT` and `SCAF_MATH_RATE_LIMIT`. Note that this option may have a significant performance impact.
 
 ## EXAMPLES
 ### Example 1: Running NAS benchmarks
     $ scafwrap ./cg.B.x &
     $ scafwrap ./lu.B.x &
     $ wait
+
+## AUTHOR
+Tim Creech <tcreech@umd.edu>
 
 ## SEE ALSO
 scafd(1)

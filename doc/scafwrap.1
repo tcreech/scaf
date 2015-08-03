@@ -36,8 +36,8 @@ Serial experiments will run (if safe) for at least the specified number of micro
 By default, serial experiments do not run unless there are multiple SCAF clients\. (A single client should probably just run on the entire machine, so performance feedback would not be useful\.) If a second client arrives, then all clients will begin executing experiments\. Setting \fBSCAF_LAZY_EXPERIMENTS=0\fR disables this behavior, and all clients will run serial experiments even if they are alone on the machine\.
 .
 .TP
-\fBSCAF_SECTION_DUMPS\fR:
-
+\fBSCAF_SECTION_DUMPS\fR
+Setting this to a non\-zero integer enables verbose logging of every parallel section to \fB/tmp/scaf\-sectiondump\.${PID}\.csv\fR\. This can be used to examine the timing and nature of parallel sections in your program\. If enabled, \fIall\fR sections will be accounted for in this file regardless of the values of \fBSCAF_COMM_RATE_LIMIT\fR and \fBSCAF_MATH_RATE_LIMIT\fR\. Note that this option may have a significant performance impact\.
 .
 .SH "EXAMPLES"
 .
@@ -50,6 +50,9 @@ $ scafwrap \./lu\.B\.x &
 $ wait
 .
 .fi
+.
+.SH "AUTHOR"
+Tim Creech \fItcreech@umd\.edu\fR
 .
 .SH "SEE ALSO"
 scafd(1)
