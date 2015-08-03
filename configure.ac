@@ -4,7 +4,7 @@ AC_CONFIG_HEADERS([config.h])
 AC_PROG_CC
 AM_PROG_CC_C_O
 AC_PROG_LIBTOOL
-AC_CONFIG_FILES([Makefile src/Makefile src/scafwrap], [chmod +x src/scafwrap])
+AC_CONFIG_FILES([Makefile src/Makefile src/scafwrap doc/Makefile], [chmod +x src/scafwrap])
 AC_CONFIG_MACRO_DIR([m4])
 AM_CONDITIONAL(FORFREEBSD, test `uname -s` = "FreeBSD")
 

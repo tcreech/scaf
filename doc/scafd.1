@@ -1,0 +1,101 @@
+.\" generated with Ronn/v0.7.3
+.\" http://github.com/rtomayko/ronn/tree/0.7.3
+.
+.TH "SCAFD" "1" "August 2015" "" ""
+.
+.SH "NAME"
+\fBscafd\fR \- Scheduling and Allocation with Feedback Daemon
+.
+.SH "SYNOPSIS"
+\fBscafd\fR [\-hbaex] [\-t \fIseconds\fR] [\-u \fIseconds\fR] [\-C \fImultiple\fR] [\-T \fImaxthreads\fR]
+.
+.SH "DESCRIPTION"
+\fBscafd\fR is the centralized daemon for the SCAF system\. It listens for connections from SCAF clients, which report their efficiency periodically\. Based on the reported efficiencies, \fBscafd\fR then advises the clients on parallel allocations\. In other words, \fBscafd\fR coordinates the degree of parallelism that parallel proceses should use, with the goal of maximizing total system speedup as its goal\.
+.
+.SH "OPTIONS"
+.
+.IP "\(bu" 4
+\fB\-h\fR: display this message
+.
+.IP "\(bu" 4
+\fB\-b\fR: don\'t monitor background load: assume load of 0
+.
+.IP "\(bu" 4
+\fB\-a\fR: disable affinity\-based parallelism control
+.
+.IP "\(bu" 4
+\fB\-e\fR: only do strict equipartitioning
+.
+.IP "\(bu" 4
+\fB\-t\fR \fIn\fR: use a plain text status interface, printing every n seconds
+.
+.IP "\(bu" 4
+\fB\-u\fR \fIn\fR: consider a client unresponsive after n seconds\. (default: 10)
+.
+.IP "\(bu" 4
+\fB\-C\fR \fIn\fR: only allocate threads in multiples of n\. (default: 1)
+.
+.IP "\(bu" 4
+\fB\-T\fR \fIn\fR: use n threads for all processes\. (default: 8)
+.
+.IP "\(bu" 4
+\fB\-x\fR: do equipartitioning during experiments\. (default: disabled)
+.
+.IP "" 0
+.
+.SH "EXAMPLES"
+.
+.SS "Example 1: default operation"
+Run \fBscafd\fR with all defaults\. This will monitor and account for background load, use affinity\-based parallelism control for non\-malleable programs, optimize for total sum of speedups, and use the total number of available threads\.
+.
+.IP "" 4
+.
+.nf
+
+$ scafd
+.
+.fi
+.
+.IP "" 0
+.
+.SS "Example 2: equipartitioning with reporting"
+Run \fBscafd\fR, but instruct it to ignore performance results from clients and implement simple equipartitioning among all clients\. Print the status of the SCAF system every 2 seconds to STDOUT\.
+.
+.IP "" 4
+.
+.nf
+
+$ scafd \-e \-t 2
+.
+.fi
+.
+.IP "" 0
+.
+.SS "Example 3: ignoring background load"
+Run \fBscafd\fR for max\-speedup, but don\'t account for background load\. Print the status of the SCAF system every second to STDOUT\.
+.
+.IP "" 4
+.
+.nf
+
+$ scafd \-b \-t 1
+.
+.fi
+.
+.IP "" 0
+.
+.SS "Example 4: equipartitioning in chunks of 4 using 32 threads maximum"
+Say we have a 64\-core machine, but we want SCAF and all of its clients to use only 32 of them\. In this case, we likely want to ignore background load too, since it will include load from the other half of the machine\. Status printed every 60 seconds\.
+.
+.IP "" 4
+.
+.nf
+
+$ scafd \-C 4 \-b \-T 32 \-t 60
+.
+.fi
+.
+.IP "" 0
+.
+.SH "SEE ALSO"
+scafwrap(1)

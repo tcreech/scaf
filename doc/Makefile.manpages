@@ -1,0 +1,12 @@
+# Use this makefile to rebuild the man pages from updated Markdown. Requires Ronn.
+# E.g., "vi scafd.md scafwrap.md && make -f Makefile.manpages"
+
+PAGES = scafd.1 scafwrap.1
+
+default: $(PAGES)
+
+%.1: %.md
+	ronn --roff $<
+
+clean:
+	-rm -f $(PAGES)
