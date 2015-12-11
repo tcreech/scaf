@@ -13,10 +13,11 @@
 #define __scaf_SECTION_START_RET void
 #define __scaf_SECTION_START_FORMAL_ARGS                                       \
     void (*fn)(void *), void *data, unsigned num_threads
-#define __scaf_SECTION_START_ACTUAL_ARGS fn, data, num_threads
-#define __scaf_SECTION_START_ACTUAL_ARGS_1_2 fn, data
 #define __scaf_SECTION_START_ACTUAL_ARGS_1 fn
 #define __scaf_SECTION_START_ACTUAL_ARGS_2 data
+#define __scaf_SECTION_START_ACTUAL_ARGS_3 num_threads
+#define __scaf_SECTION_START_ACTUAL_ARGS_1_2 __scaf_SECTION_START_ACTUAL_ARGS_1, __scaf_SECTION_START_ACTUAL_ARGS_2
+#define __scaf_SECTION_START_ACTUAL_ARGS __scaf_SECTION_START_ACTUAL_ARGS_1, __scaf_SECTION_START_ACTUAL_ARGS_2, __scaf_SECTION_START_ACTUAL_ARGS_3
 #define __scaf_SECTION_END GOMP_parallel_end
 #define __scaf_SECTION_END_RET void
 #define __scaf_SECTION_END_FORMAL_ARGS void
@@ -27,12 +28,12 @@
 #define __scaf_SECTION_BOTH_RET void
 #define __scaf_SECTION_BOTH_FORMAL_ARGS                                        \
     void (*fn)(void *), void *data, unsigned num_threads, unsigned int flags
-#define __scaf_SECTION_BOTH_ACTUAL_ARGS fn, data, num_threads, flags
-#define __scaf_SECTION_BOTH_ACTUAL_ARGS_1_2 fn, data
 #define __scaf_SECTION_BOTH_ACTUAL_ARGS_1 fn
 #define __scaf_SECTION_BOTH_ACTUAL_ARGS_2 data
 #define __scaf_SECTION_BOTH_ACTUAL_ARGS_3 num_threads
 #define __scaf_SECTION_BOTH_ACTUAL_ARGS_4 flags
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS_1_2 __scaf_SECTION_BOTH_ACTUAL_ARGS_1, __scaf_SECTION_BOTH_ACTUAL_ARGS_2
+#define __scaf_SECTION_BOTH_ACTUAL_ARGS __scaf_SECTION_BOTH_ACTUAL_ARGS_1, __scaf_SECTION_BOTH_ACTUAL_ARGS_2, __scaf_SECTION_BOTH_ACTUAL_ARGS_3, __scaf_SECTION_BOTH_ACTUAL_ARGS_4
 /* Both versions have get/set_num_threads routines. We also hijack these in
  * order to detect non-malleable processes. */
 #define __scaf_GET_THREADS omp_get_num_threads
