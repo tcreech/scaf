@@ -28,6 +28,9 @@ The underlying SCAF runtime that `scafwrap` uses is affected by the following en
 * `SCAF_SECTION_DUMPS`:
   Setting this to a non-zero integer enables verbose logging of every parallel section to `/tmp/scaf-sectiondump.${PID}.csv`. This can be used to examine the timing and nature of parallel sections in your program. If enabled, *all* sections will be accounted for in this file regardless of the values of `SCAF_COMM_RATE_LIMIT` and `SCAF_MATH_RATE_LIMIT`. Note that this option may have a significant performance impact.
 
+* `SCAF_NOT_MALLEABLE`:
+  Setting this to a non-zero integer notifies the SCAF runtime that the process is known to be NOT malleable. Although SCAF can generally detect non-malleable processes dynamically without this hint, sometimes higher performance can be achieved if it is explicitly known to be non-malleable before execution begins.
+
 ## EXAMPLES
 ### Example 1: Running NAS benchmarks
     $ scafwrap ./cg.B.x &

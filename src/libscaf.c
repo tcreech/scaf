@@ -109,6 +109,7 @@ static int scaf_mypid;
 static int scaf_num_online_hardware_threads;
 static int scaf_nullfd;
 volatile int scaf_notified_not_malleable = 0;
+static int scaf_explicitly_not_malleable = 0;
 static int scaf_section_dumps = 0;
 static FILE *scaf_sd;
 
@@ -421,6 +422,14 @@ static void *scaf_init(void **context_p) {
         scaf_dump_section_header();
     }
 
+    // Check if the user is explicitly telling us that this process is not
+    // malleable.
+    char *user_not_malleable = getenv("SCAF_NOT_MALLEABLE");
+    if(user_not_malleable)
+        scaf_explicitly_not_malleable = atoi(user_not_malleable);
+    else
+        scaf_explicitly_not_malleable = 0;
+
     void *context = zmq_init(1);
     *context_p = context;
     void *requester = zmq_socket(context, ZMQ_REQ);
@@ -572,6 +581,9 @@ int scaf_section_start(void *section) {
             scaf_connect(scafd);
         }
     }
+
+    if(scaf_explicitly_not_malleable)
+        scaf_not_malleable();
 
     if(scaf_section_dumps)
         scaf_dump_section_start(current_section_id);

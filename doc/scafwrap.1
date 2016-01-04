@@ -1,7 +1,7 @@
 .\" generated with Ronn/v0.7.3
 .\" http://github.com/rtomayko/ronn/tree/0.7.3
 .
-.TH "SCAFWRAP" "1" "August 2015" "" ""
+.TH "SCAFWRAP" "1" "December 2015" "" ""
 .
 .SH "NAME"
 \fBscafwrap\fR \- Shell wrapper to transparently invoke OpenMP programs as SCAF clients
@@ -38,6 +38,10 @@ By default, serial experiments do not run unless there are multiple SCAF clients
 .TP
 \fBSCAF_SECTION_DUMPS\fR
 Setting this to a non\-zero integer enables verbose logging of every parallel section to \fB/tmp/scaf\-sectiondump\.${PID}\.csv\fR\. This can be used to examine the timing and nature of parallel sections in your program\. If enabled, \fIall\fR sections will be accounted for in this file regardless of the values of \fBSCAF_COMM_RATE_LIMIT\fR and \fBSCAF_MATH_RATE_LIMIT\fR\. Note that this option may have a significant performance impact\.
+.
+.TP
+\fBSCAF_NOT_MALLEABLE\fR
+Setting this to a non\-zero integer notifies the SCAF runtime that the process is known to be NOT malleable\. Although SCAF can generally detect non\-malleable processes dynamically without this hint, sometimes higher performance can be achieved if it is explicitly known to be non\-malleable before execution begins\.
 .
 .SH "EXAMPLES"
 .
